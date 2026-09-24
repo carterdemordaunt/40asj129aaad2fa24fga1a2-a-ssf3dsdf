@@ -1,0 +1,55 @@
+name: Europe reachability check
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Update proxy list"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: europe-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: GitHub-runner stable list
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Mark job start
+        run: touch .jobstart
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Skip failed trigger
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ] \
+             && [ "${{ github.event.workflow_run.conclusion }}" != "success" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Triggering update failed; keeping previous lists"
+          fi
+
+      - name: Test Europe list builder
+        if: steps.gate.outputs.skip != 'true'
+        run: python -m unittest tests.test_europe_check
+
+      - name: Probe and filter on GitHub runner
+        if: steps.gate.outputs.skip != 'true'
+        run: >-
+          python scripts/europe_check.py
+          --min-speed-mbps 5
+
+      - name: Commit Europe results
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          bash .github/scripts/commit_data.sh "chore(data): GitHub runner candidates ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
