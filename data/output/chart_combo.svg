@@ -12,98 +12,98 @@
 <text class="e" x="792" y="27">99.5%</text>
 <line class="a" x1="754" y1="24" x2="754" y2="266"/>
 <line class="a" x1="46" y1="24" x2="46" y2="266"/><line class="a" x1="46" y1="266" x2="754" y2="266"/>
-<polyline fill="none" stroke="#4c78a8" stroke-width="2" stroke-linejoin="round" points="46,77.9 59.5,77.9 77.9,78.1 103.2,80.6 147.2,80.3 161.8,80.3 211.8,82.7 228.9,82.7 243.3,82.4 256.2,82.3 265.6,82.3 286.9,82.6 312.9,60.2 334.0,60.7 348.5,60.9 361.3,60.8 377.0,60.8 419.1,62.0 447.8,61.8 471.5,61.5 484.1,61.4 513.1,64.5 559.4,64.9 572.0,64.8 585.7,64.8 602.0,66.9 625.0,67.0 649.3,66.8 670.1,66.5 684.1,66.6 752.9,68.8"/>
-<circle cx="46" cy="77.9" r="4" fill="transparent"><title>2026-09-17 19:30 · 去重: 19433</title></circle>
-<circle cx="77.9" cy="78.1" r="4" fill="transparent"><title>2026-09-18 02:52 · 去重: 19407</title></circle>
-<circle cx="103.2" cy="80.6" r="4" fill="transparent"><title>2026-09-18 08:42 · 去重: 19152</title></circle>
-<circle cx="161.8" cy="80.3" r="4" fill="transparent"><title>2026-09-18 22:12 · 去重: 19184</title></circle>
-<circle cx="211.8" cy="82.7" r="4" fill="transparent"><title>2026-09-19 09:45 · 去重: 18932</title></circle>
-<circle cx="243.3" cy="82.4" r="4" fill="transparent"><title>2026-09-19 17:01 · 去重: 18962</title></circle>
-<circle cx="256.2" cy="82.3" r="4" fill="transparent"><title>2026-09-19 19:58 · 去重: 18979</title></circle>
-<circle cx="286.9" cy="82.6" r="4" fill="transparent"><title>2026-09-20 03:04 · 去重: 18944</title></circle>
-<circle cx="334.0" cy="60.7" r="4" fill="transparent"><title>2026-09-20 13:55 · 去重: 21208</title></circle>
-<circle cx="348.5" cy="60.9" r="4" fill="transparent"><title>2026-09-20 17:16 · 去重: 21193</title></circle>
-<circle cx="377.0" cy="60.8" r="4" fill="transparent"><title>2026-09-20 23:50 · 去重: 21198</title></circle>
-<circle cx="419.1" cy="62.0" r="4" fill="transparent"><title>2026-09-21 09:33 · 去重: 21071</title></circle>
-<circle cx="471.5" cy="61.5" r="4" fill="transparent"><title>2026-09-21 21:38 · 去重: 21129</title></circle>
-<circle cx="513.1" cy="64.5" r="4" fill="transparent"><title>2026-09-22 07:13 · 去重: 20817</title></circle>
-<circle cx="559.4" cy="64.9" r="4" fill="transparent"><title>2026-09-22 17:54 · 去重: 20778</title></circle>
-<circle cx="585.7" cy="64.8" r="4" fill="transparent"><title>2026-09-22 23:58 · 去重: 20786</title></circle>
-<circle cx="602.0" cy="66.9" r="4" fill="transparent"><title>2026-09-23 03:43 · 去重: 20573</title></circle>
-<circle cx="649.3" cy="66.8" r="4" fill="transparent"><title>2026-09-23 14:38 · 去重: 20575</title></circle>
-<circle cx="670.1" cy="66.5" r="4" fill="transparent"><title>2026-09-23 19:25 · 去重: 20607</title></circle>
-<circle cx="752.9" cy="68.8" r="4" fill="transparent"><title>2026-09-24 14:32 · 去重: 20368</title></circle>
-<text class="t" x="748.9" y="64.8" text-anchor="end" fill="#4c78a8">20368</text>
-<polyline fill="none" stroke="#54a24b" stroke-width="2" stroke-linejoin="round" points="47.3,90.5 60.7,90.3 78.9,90.8 104.2,92.0 148.2,92.3 162.9,92.4 213.2,94.2 230.1,94.4 244.7,94.5 257.2,94.9 267.0,94.8 288.0,95.1 314.2,84.8 335.4,86.1 349.8,85.6 362.4,85.8 378.3,86.0 420.4,87.1 448.9,88.0 472.7,88.6 485.2,88.6 514.2,89.0 560.8,90.7 573.4,90.4 586.8,90.9 603.3,90.8 626.2,92.3 650.7,93.0 671.2,93.6 685.3,93.7 754,94.5"/>
-<circle cx="47.3" cy="90.5" r="4" fill="transparent"><title>2026-09-17 19:49 · 存活: 18133</title></circle>
-<circle cx="78.9" cy="90.8" r="4" fill="transparent"><title>2026-09-18 03:06 · 存活: 18102</title></circle>
-<circle cx="104.2" cy="92.0" r="4" fill="transparent"><title>2026-09-18 08:56 · 存活: 17974</title></circle>
-<circle cx="162.9" cy="92.4" r="4" fill="transparent"><title>2026-09-18 22:28 · 存活: 17930</title></circle>
-<circle cx="213.2" cy="94.2" r="4" fill="transparent"><title>2026-09-19 10:04 · 存活: 17750</title></circle>
-<circle cx="244.7" cy="94.5" r="4" fill="transparent"><title>2026-09-19 17:20 · 存活: 17722</title></circle>
-<circle cx="257.2" cy="94.9" r="4" fill="transparent"><title>2026-09-19 20:12 · 存活: 17677</title></circle>
-<circle cx="288.0" cy="95.1" r="4" fill="transparent"><title>2026-09-20 03:19 · 存活: 17659</title></circle>
-<circle cx="335.4" cy="86.1" r="4" fill="transparent"><title>2026-09-20 14:14 · 存活: 18587</title></circle>
-<circle cx="349.8" cy="85.6" r="4" fill="transparent"><title>2026-09-20 17:34 · 存活: 18632</title></circle>
-<circle cx="378.3" cy="86.0" r="4" fill="transparent"><title>2026-09-21 00:08 · 存活: 18597</title></circle>
-<circle cx="420.4" cy="87.1" r="4" fill="transparent"><title>2026-09-21 09:51 · 存活: 18480</title></circle>
-<circle cx="472.7" cy="88.6" r="4" fill="transparent"><title>2026-09-21 21:54 · 存活: 18322</title></circle>
-<circle cx="514.2" cy="89.0" r="4" fill="transparent"><title>2026-09-22 07:29 · 存活: 18286</title></circle>
-<circle cx="560.8" cy="90.7" r="4" fill="transparent"><title>2026-09-22 18:14 · 存活: 18111</title></circle>
-<circle cx="586.8" cy="90.9" r="4" fill="transparent"><title>2026-09-23 00:13 · 存活: 18088</title></circle>
-<circle cx="603.3" cy="90.8" r="4" fill="transparent"><title>2026-09-23 04:02 · 存活: 18099</title></circle>
-<circle cx="650.7" cy="93.0" r="4" fill="transparent"><title>2026-09-23 14:58 · 存活: 17870</title></circle>
-<circle cx="671.2" cy="93.6" r="4" fill="transparent"><title>2026-09-23 19:42 · 存活: 17808</title></circle>
-<circle cx="754" cy="94.5" r="4" fill="transparent"><title>2026-09-24 14:47 · 存活: 17714</title></circle>
-<text class="t" x="750" y="90.5" text-anchor="end" fill="#54a24b">17714</text>
-<polyline fill="none" stroke="#8c564b" stroke-width="2" stroke-dasharray="4,3" stroke-linejoin="round" points="47.3,253.3 60.7,253.5 78.9,253.2 104.2,254.5 148.2,253.9 162.9,253.7 213.2,254.4 230.1,254.2 244.7,253.9 257.2,253.3 267.0,253.4 288.0,253.5 314.2,241.4 335.4,240.6 349.8,241.1 362.4,240.8 378.3,240.7 420.4,240.9 448.9,239.6 472.7,238.6 485.2,238.6 514.2,241.4 560.8,240.1 573.4,240.1 586.8,239.7 603.3,241.8 626.2,240.3 650.7,239.6 671.2,238.7 685.3,238.6 754,240.1"/>
-<circle cx="47.3" cy="253.3" r="4" fill="transparent"><title>2026-09-17 19:49 · 死亡: 1310</title></circle>
-<circle cx="78.9" cy="253.2" r="4" fill="transparent"><title>2026-09-18 03:06 · 死亡: 1319</title></circle>
-<circle cx="104.2" cy="254.5" r="4" fill="transparent"><title>2026-09-18 08:56 · 死亡: 1192</title></circle>
-<circle cx="162.9" cy="253.7" r="4" fill="transparent"><title>2026-09-18 22:28 · 死亡: 1267</title></circle>
-<circle cx="213.2" cy="254.4" r="4" fill="transparent"><title>2026-09-19 10:04 · 死亡: 1203</title></circle>
-<circle cx="244.7" cy="253.9" r="4" fill="transparent"><title>2026-09-19 17:20 · 死亡: 1249</title></circle>
-<circle cx="257.2" cy="253.3" r="4" fill="transparent"><title>2026-09-19 20:12 · 死亡: 1314</title></circle>
-<circle cx="288.0" cy="253.5" r="4" fill="transparent"><title>2026-09-20 03:19 · 死亡: 1287</title></circle>
-<circle cx="335.4" cy="240.6" r="4" fill="transparent"><title>2026-09-20 14:14 · 死亡: 2625</title></circle>
-<circle cx="349.8" cy="241.1" r="4" fill="transparent"><title>2026-09-20 17:34 · 死亡: 2574</title></circle>
-<circle cx="378.3" cy="240.7" r="4" fill="transparent"><title>2026-09-21 00:08 · 死亡: 2617</title></circle>
-<circle cx="420.4" cy="240.9" r="4" fill="transparent"><title>2026-09-21 09:51 · 死亡: 2595</title></circle>
-<circle cx="472.7" cy="238.6" r="4" fill="transparent"><title>2026-09-21 21:54 · 死亡: 2835</title></circle>
-<circle cx="514.2" cy="241.4" r="4" fill="transparent"><title>2026-09-22 07:29 · 死亡: 2545</title></circle>
-<circle cx="560.8" cy="240.1" r="4" fill="transparent"><title>2026-09-22 18:14 · 死亡: 2679</title></circle>
-<circle cx="586.8" cy="239.7" r="4" fill="transparent"><title>2026-09-23 00:13 · 死亡: 2720</title></circle>
-<circle cx="603.3" cy="241.8" r="4" fill="transparent"><title>2026-09-23 04:02 · 死亡: 2502</title></circle>
-<circle cx="650.7" cy="239.6" r="4" fill="transparent"><title>2026-09-23 14:58 · 死亡: 2725</title></circle>
-<circle cx="671.2" cy="238.7" r="4" fill="transparent"><title>2026-09-23 19:42 · 死亡: 2822</title></circle>
-<circle cx="754" cy="240.1" r="4" fill="transparent"><title>2026-09-24 14:47 · 死亡: 2671</title></circle>
-<text class="t" x="750" y="236.1" text-anchor="end" fill="#8c564b">2671</text>
-<polyline fill="none" stroke="#f58518" stroke-width="2" stroke-dasharray="4,3" stroke-linejoin="round" points="47.3,104.7 60.7,56.3 78.9,72.4 104.2,120.8 148.2,136.9 162.9,88.5 213.2,120.8 230.1,104.7 244.7,104.7 257.2,136.9 267.0,104.7 288.0,88.5 314.2,136.9 335.4,169.2 349.8,136.9 362.4,153.1 378.3,153.1 420.4,185.3 448.9,249.9 472.7,249.9 485.2,136.9 514.2,153.1 560.8,249.9 573.4,153.1 586.8,169.2 603.3,104.7 626.2,233.7 650.7,201.5 671.2,233.7 685.3,153.1 754,266"/>
-<circle cx="47.3" cy="104.7" r="4" fill="transparent"><title>2026-09-17 19:49 · 存活率: 99</title></circle>
-<circle cx="78.9" cy="72.4" r="4" fill="transparent"><title>2026-09-18 03:06 · 存活率: 99.2</title></circle>
-<circle cx="104.2" cy="120.8" r="4" fill="transparent"><title>2026-09-18 08:56 · 存活率: 98.9</title></circle>
-<circle cx="162.9" cy="88.5" r="4" fill="transparent"><title>2026-09-18 22:28 · 存活率: 99.1</title></circle>
-<circle cx="213.2" cy="120.8" r="4" fill="transparent"><title>2026-09-19 10:04 · 存活率: 98.9</title></circle>
-<circle cx="244.7" cy="104.7" r="4" fill="transparent"><title>2026-09-19 17:20 · 存活率: 99</title></circle>
-<circle cx="257.2" cy="136.9" r="4" fill="transparent"><title>2026-09-19 20:12 · 存活率: 98.8</title></circle>
-<circle cx="288.0" cy="88.5" r="4" fill="transparent"><title>2026-09-20 03:19 · 存活率: 99.1</title></circle>
-<circle cx="335.4" cy="169.2" r="4" fill="transparent"><title>2026-09-20 14:14 · 存活率: 98.6</title></circle>
-<circle cx="349.8" cy="136.9" r="4" fill="transparent"><title>2026-09-20 17:34 · 存活率: 98.8</title></circle>
-<circle cx="378.3" cy="153.1" r="4" fill="transparent"><title>2026-09-21 00:08 · 存活率: 98.7</title></circle>
-<circle cx="420.4" cy="185.3" r="4" fill="transparent"><title>2026-09-21 09:51 · 存活率: 98.5</title></circle>
-<circle cx="472.7" cy="249.9" r="4" fill="transparent"><title>2026-09-21 21:54 · 存活率: 98.1</title></circle>
-<circle cx="514.2" cy="153.1" r="4" fill="transparent"><title>2026-09-22 07:29 · 存活率: 98.7</title></circle>
-<circle cx="560.8" cy="249.9" r="4" fill="transparent"><title>2026-09-22 18:14 · 存活率: 98.1</title></circle>
-<circle cx="586.8" cy="169.2" r="4" fill="transparent"><title>2026-09-23 00:13 · 存活率: 98.6</title></circle>
-<circle cx="603.3" cy="104.7" r="4" fill="transparent"><title>2026-09-23 04:02 · 存活率: 99</title></circle>
-<circle cx="650.7" cy="201.5" r="4" fill="transparent"><title>2026-09-23 14:58 · 存活率: 98.4</title></circle>
-<circle cx="671.2" cy="233.7" r="4" fill="transparent"><title>2026-09-23 19:42 · 存活率: 98.2</title></circle>
-<circle cx="754" cy="266" r="4" fill="transparent"><title>2026-09-24 14:47 · 存活率: 98</title></circle>
-<text class="t" x="750" y="262" text-anchor="end" fill="#f58518">98</text>
-<text class="t" x="46" y="288">2026-09-17 19:30</text>
-<text class="m" x="228.9" y="288">2026-09-19 13:41</text>
-<text class="m" x="419.1" y="288">2026-09-21 09:33</text>
-<text class="m" x="573.4" y="288">2026-09-22 21:08</text>
-<text class="e" x="754" y="288">2026-09-24 14:47</text>
-<line x1="14" y1="20" x2="32" y2="20" stroke="#4c78a8" stroke-width="2"/><text class="l" x="36" y="23">去重 20368</text><line x1="103.2" y1="20" x2="121.2" y2="20" stroke="#54a24b" stroke-width="2"/><text class="l" x="125.2" y="23">存活 17714</text><line x1="192.4" y1="20" x2="210.4" y2="20" stroke="#8c564b" stroke-width="2" stroke-dasharray="4,3"/><text class="l" x="214.4" y="23">死亡 2671</text><line x1="275.2" y1="20" x2="293.2" y2="20" stroke="#f58518" stroke-width="2" stroke-dasharray="4,3"/><text class="l" x="297.2" y="23">存活率 98</text>
+<polyline fill="none" stroke="#4c78a8" stroke-width="2" stroke-linejoin="round" points="46,77.9 64.2,78.1 89.2,80.6 132.6,80.3 147.1,80.3 196.5,82.7 213.4,82.7 227.6,82.4 240.3,82.3 249.6,82.3 270.7,82.6 296.3,60.2 317.2,60.7 331.5,60.9 344.2,60.8 359.6,60.8 401.3,62.0 429.7,61.8 453.0,61.5 465.5,61.4 494.1,64.5 539.9,64.9 552.4,64.8 565.9,64.8 582.0,66.9 604.7,67.0 628.7,66.8 649.2,66.5 663.0,66.6 731.1,68.8 752.9,68.7"/>
+<circle cx="46" cy="77.9" r="4" fill="transparent"><title>2026-09-17 22:37 · 去重: 19427</title></circle>
+<circle cx="89.2" cy="80.6" r="4" fill="transparent"><title>2026-09-18 08:42 · 去重: 19152</title></circle>
+<circle cx="132.6" cy="80.3" r="4" fill="transparent"><title>2026-09-18 18:50 · 去重: 19179</title></circle>
+<circle cx="196.5" cy="82.7" r="4" fill="transparent"><title>2026-09-19 09:45 · 去重: 18932</title></circle>
+<circle cx="213.4" cy="82.7" r="4" fill="transparent"><title>2026-09-19 13:41 · 去重: 18935</title></circle>
+<circle cx="240.3" cy="82.3" r="4" fill="transparent"><title>2026-09-19 19:58 · 去重: 18979</title></circle>
+<circle cx="249.6" cy="82.3" r="4" fill="transparent"><title>2026-09-19 22:09 · 去重: 18976</title></circle>
+<circle cx="296.3" cy="60.2" r="4" fill="transparent"><title>2026-09-20 09:03 · 去重: 21256</title></circle>
+<circle cx="331.5" cy="60.9" r="4" fill="transparent"><title>2026-09-20 17:16 · 去重: 21193</title></circle>
+<circle cx="344.2" cy="60.8" r="4" fill="transparent"><title>2026-09-20 20:13 · 去重: 21194</title></circle>
+<circle cx="401.3" cy="62.0" r="4" fill="transparent"><title>2026-09-21 09:33 · 去重: 21071</title></circle>
+<circle cx="429.7" cy="61.8" r="4" fill="transparent"><title>2026-09-21 16:10 · 去重: 21091</title></circle>
+<circle cx="465.5" cy="61.4" r="4" fill="transparent"><title>2026-09-22 00:33 · 去重: 21138</title></circle>
+<circle cx="539.9" cy="64.9" r="4" fill="transparent"><title>2026-09-22 17:54 · 去重: 20778</title></circle>
+<circle cx="552.4" cy="64.8" r="4" fill="transparent"><title>2026-09-22 20:49 · 去重: 20787</title></circle>
+<circle cx="582.0" cy="66.9" r="4" fill="transparent"><title>2026-09-23 03:43 · 去重: 20573</title></circle>
+<circle cx="604.7" cy="67.0" r="4" fill="transparent"><title>2026-09-23 09:02 · 去重: 20563</title></circle>
+<circle cx="649.2" cy="66.5" r="4" fill="transparent"><title>2026-09-23 19:25 · 去重: 20607</title></circle>
+<circle cx="663.0" cy="66.6" r="4" fill="transparent"><title>2026-09-23 22:39 · 去重: 20596</title></circle>
+<circle cx="752.9" cy="68.7" r="4" fill="transparent"><title>2026-09-24 19:37 · 去重: 20383</title></circle>
+<text class="t" x="748.9" y="64.7" text-anchor="end" fill="#4c78a8">20383</text>
+<polyline fill="none" stroke="#54a24b" stroke-width="2" stroke-linejoin="round" points="47.2,90.3 65.2,90.8 90.2,92.0 133.6,92.3 148.2,92.4 197.8,94.2 214.5,94.4 229.0,94.5 241.3,94.9 250.9,94.8 271.8,95.1 297.7,84.8 318.6,86.1 332.8,85.6 345.3,85.8 361.0,86.0 402.6,87.1 430.7,88.0 454.2,88.6 466.6,88.6 495.2,89.0 541.3,90.7 553.7,90.4 566.9,90.9 583.3,90.8 605.9,92.3 630.1,93.0 650.4,93.6 664.3,93.7 732.1,94.5 754,94.7"/>
+<circle cx="47.2" cy="90.3" r="4" fill="transparent"><title>2026-09-17 22:54 · 存活: 18155</title></circle>
+<circle cx="90.2" cy="92.0" r="4" fill="transparent"><title>2026-09-18 08:56 · 存活: 17974</title></circle>
+<circle cx="133.6" cy="92.3" r="4" fill="transparent"><title>2026-09-18 19:04 · 存活: 17942</title></circle>
+<circle cx="197.8" cy="94.2" r="4" fill="transparent"><title>2026-09-19 10:04 · 存活: 17750</title></circle>
+<circle cx="214.5" cy="94.4" r="4" fill="transparent"><title>2026-09-19 13:57 · 存活: 17724</title></circle>
+<circle cx="241.3" cy="94.9" r="4" fill="transparent"><title>2026-09-19 20:12 · 存活: 17677</title></circle>
+<circle cx="250.9" cy="94.8" r="4" fill="transparent"><title>2026-09-19 22:27 · 存活: 17683</title></circle>
+<circle cx="297.7" cy="84.8" r="4" fill="transparent"><title>2026-09-20 09:22 · 存活: 18724</title></circle>
+<circle cx="332.8" cy="85.6" r="4" fill="transparent"><title>2026-09-20 17:34 · 存活: 18632</title></circle>
+<circle cx="345.3" cy="85.8" r="4" fill="transparent"><title>2026-09-20 20:28 · 存活: 18611</title></circle>
+<circle cx="402.6" cy="87.1" r="4" fill="transparent"><title>2026-09-21 09:51 · 存活: 18480</title></circle>
+<circle cx="430.7" cy="88.0" r="4" fill="transparent"><title>2026-09-21 16:26 · 存活: 18388</title></circle>
+<circle cx="466.6" cy="88.6" r="4" fill="transparent"><title>2026-09-22 00:47 · 存活: 18324</title></circle>
+<circle cx="541.3" cy="90.7" r="4" fill="transparent"><title>2026-09-22 18:14 · 存活: 18111</title></circle>
+<circle cx="553.7" cy="90.4" r="4" fill="transparent"><title>2026-09-22 21:08 · 存活: 18140</title></circle>
+<circle cx="583.3" cy="90.8" r="4" fill="transparent"><title>2026-09-23 04:02 · 存活: 18099</title></circle>
+<circle cx="605.9" cy="92.3" r="4" fill="transparent"><title>2026-09-23 09:18 · 存活: 17944</title></circle>
+<circle cx="650.4" cy="93.6" r="4" fill="transparent"><title>2026-09-23 19:42 · 存活: 17808</title></circle>
+<circle cx="664.3" cy="93.7" r="4" fill="transparent"><title>2026-09-23 22:57 · 存活: 17802</title></circle>
+<circle cx="754" cy="94.7" r="4" fill="transparent"><title>2026-09-24 19:53 · 存活: 17701</title></circle>
+<text class="t" x="750" y="90.7" text-anchor="end" fill="#54a24b">17701</text>
+<polyline fill="none" stroke="#8c564b" stroke-width="2" stroke-dasharray="4,3" stroke-linejoin="round" points="47.2,253.5 65.2,253.2 90.2,254.5 133.6,253.9 148.2,253.7 197.8,254.4 214.5,254.2 229.0,253.9 241.3,253.3 250.9,253.4 271.8,253.5 297.7,241.4 318.6,240.6 332.8,241.1 345.3,240.8 361.0,240.7 402.6,240.9 430.7,239.6 454.2,238.6 466.6,238.6 495.2,241.4 541.3,240.1 553.7,240.1 566.9,239.7 583.3,241.8 605.9,240.3 630.1,239.6 650.4,238.7 664.3,238.6 732.1,240.1 754,239.8"/>
+<circle cx="47.2" cy="253.5" r="4" fill="transparent"><title>2026-09-17 22:54 · 死亡: 1289</title></circle>
+<circle cx="90.2" cy="254.5" r="4" fill="transparent"><title>2026-09-18 08:56 · 死亡: 1192</title></circle>
+<circle cx="133.6" cy="253.9" r="4" fill="transparent"><title>2026-09-18 19:04 · 死亡: 1252</title></circle>
+<circle cx="197.8" cy="254.4" r="4" fill="transparent"><title>2026-09-19 10:04 · 死亡: 1203</title></circle>
+<circle cx="214.5" cy="254.2" r="4" fill="transparent"><title>2026-09-19 13:57 · 死亡: 1221</title></circle>
+<circle cx="241.3" cy="253.3" r="4" fill="transparent"><title>2026-09-19 20:12 · 死亡: 1314</title></circle>
+<circle cx="250.9" cy="253.4" r="4" fill="transparent"><title>2026-09-19 22:27 · 死亡: 1301</title></circle>
+<circle cx="297.7" cy="241.4" r="4" fill="transparent"><title>2026-09-20 09:22 · 死亡: 2545</title></circle>
+<circle cx="332.8" cy="241.1" r="4" fill="transparent"><title>2026-09-20 17:34 · 死亡: 2574</title></circle>
+<circle cx="345.3" cy="240.8" r="4" fill="transparent"><title>2026-09-20 20:28 · 死亡: 2599</title></circle>
+<circle cx="402.6" cy="240.9" r="4" fill="transparent"><title>2026-09-21 09:51 · 死亡: 2595</title></circle>
+<circle cx="430.7" cy="239.6" r="4" fill="transparent"><title>2026-09-21 16:26 · 死亡: 2730</title></circle>
+<circle cx="466.6" cy="238.6" r="4" fill="transparent"><title>2026-09-22 00:47 · 死亡: 2834</title></circle>
+<circle cx="541.3" cy="240.1" r="4" fill="transparent"><title>2026-09-22 18:14 · 死亡: 2679</title></circle>
+<circle cx="553.7" cy="240.1" r="4" fill="transparent"><title>2026-09-22 21:08 · 死亡: 2679</title></circle>
+<circle cx="583.3" cy="241.8" r="4" fill="transparent"><title>2026-09-23 04:02 · 死亡: 2502</title></circle>
+<circle cx="605.9" cy="240.3" r="4" fill="transparent"><title>2026-09-23 09:18 · 死亡: 2650</title></circle>
+<circle cx="650.4" cy="238.7" r="4" fill="transparent"><title>2026-09-23 19:42 · 死亡: 2822</title></circle>
+<circle cx="664.3" cy="238.6" r="4" fill="transparent"><title>2026-09-23 22:57 · 死亡: 2828</title></circle>
+<circle cx="754" cy="239.8" r="4" fill="transparent"><title>2026-09-24 19:53 · 死亡: 2705</title></circle>
+<text class="t" x="750" y="235.8" text-anchor="end" fill="#8c564b">2705</text>
+<polyline fill="none" stroke="#f58518" stroke-width="2" stroke-dasharray="4,3" stroke-linejoin="round" points="47.2,56.3 65.2,72.4 90.2,120.8 133.6,136.9 148.2,88.5 197.8,120.8 214.5,104.7 229.0,104.7 241.3,136.9 250.9,104.7 271.8,88.5 297.7,136.9 318.6,169.2 332.8,136.9 345.3,153.1 361.0,153.1 402.6,185.3 430.7,249.9 454.2,249.9 466.6,136.9 495.2,153.1 541.3,249.9 553.7,153.1 566.9,169.2 583.3,104.7 605.9,233.7 630.1,201.5 650.4,233.7 664.3,153.1 732.1,266 754,201.5"/>
+<circle cx="47.2" cy="56.3" r="4" fill="transparent"><title>2026-09-17 22:54 · 存活率: 99.3</title></circle>
+<circle cx="90.2" cy="120.8" r="4" fill="transparent"><title>2026-09-18 08:56 · 存活率: 98.9</title></circle>
+<circle cx="133.6" cy="136.9" r="4" fill="transparent"><title>2026-09-18 19:04 · 存活率: 98.8</title></circle>
+<circle cx="197.8" cy="120.8" r="4" fill="transparent"><title>2026-09-19 10:04 · 存活率: 98.9</title></circle>
+<circle cx="214.5" cy="104.7" r="4" fill="transparent"><title>2026-09-19 13:57 · 存活率: 99</title></circle>
+<circle cx="241.3" cy="136.9" r="4" fill="transparent"><title>2026-09-19 20:12 · 存活率: 98.8</title></circle>
+<circle cx="250.9" cy="104.7" r="4" fill="transparent"><title>2026-09-19 22:27 · 存活率: 99</title></circle>
+<circle cx="297.7" cy="136.9" r="4" fill="transparent"><title>2026-09-20 09:22 · 存活率: 98.8</title></circle>
+<circle cx="332.8" cy="136.9" r="4" fill="transparent"><title>2026-09-20 17:34 · 存活率: 98.8</title></circle>
+<circle cx="345.3" cy="153.1" r="4" fill="transparent"><title>2026-09-20 20:28 · 存活率: 98.7</title></circle>
+<circle cx="402.6" cy="185.3" r="4" fill="transparent"><title>2026-09-21 09:51 · 存活率: 98.5</title></circle>
+<circle cx="430.7" cy="249.9" r="4" fill="transparent"><title>2026-09-21 16:26 · 存活率: 98.1</title></circle>
+<circle cx="466.6" cy="136.9" r="4" fill="transparent"><title>2026-09-22 00:47 · 存活率: 98.8</title></circle>
+<circle cx="541.3" cy="249.9" r="4" fill="transparent"><title>2026-09-22 18:14 · 存活率: 98.1</title></circle>
+<circle cx="553.7" cy="153.1" r="4" fill="transparent"><title>2026-09-22 21:08 · 存活率: 98.7</title></circle>
+<circle cx="583.3" cy="104.7" r="4" fill="transparent"><title>2026-09-23 04:02 · 存活率: 99</title></circle>
+<circle cx="605.9" cy="233.7" r="4" fill="transparent"><title>2026-09-23 09:18 · 存活率: 98.2</title></circle>
+<circle cx="650.4" cy="233.7" r="4" fill="transparent"><title>2026-09-23 19:42 · 存活率: 98.2</title></circle>
+<circle cx="664.3" cy="153.1" r="4" fill="transparent"><title>2026-09-23 22:57 · 存活率: 98.7</title></circle>
+<circle cx="754" cy="201.5" r="4" fill="transparent"><title>2026-09-24 19:53 · 存活率: 98.4</title></circle>
+<text class="t" x="750" y="197.5" text-anchor="end" fill="#f58518">98.4</text>
+<text class="t" x="46" y="288">2026-09-17 22:37</text>
+<text class="m" x="227.6" y="288">2026-09-19 17:01</text>
+<text class="m" x="401.3" y="288">2026-09-21 09:33</text>
+<text class="m" x="582.0" y="288">2026-09-23 03:43</text>
+<text class="e" x="754" y="288">2026-09-24 19:53</text>
+<line x1="14" y1="20" x2="32" y2="20" stroke="#4c78a8" stroke-width="2"/><text class="l" x="36" y="23">去重 20383</text><line x1="103.2" y1="20" x2="121.2" y2="20" stroke="#54a24b" stroke-width="2"/><text class="l" x="125.2" y="23">存活 17701</text><line x1="192.4" y1="20" x2="210.4" y2="20" stroke="#8c564b" stroke-width="2" stroke-dasharray="4,3"/><text class="l" x="214.4" y="23">死亡 2705</text><line x1="275.2" y1="20" x2="293.2" y2="20" stroke="#f58518" stroke-width="2" stroke-dasharray="4,3"/><text class="l" x="297.2" y="23">存活率 98.4</text>
 </svg>

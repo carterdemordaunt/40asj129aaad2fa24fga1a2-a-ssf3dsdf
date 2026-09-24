@@ -1,22 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="800" height="302" viewBox="0 0 800 302"><rect width="800" height="302" fill="#ffffff"/><style>text{font-family:system-ui,-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif}.g{stroke:#e8e8e8;stroke-width:1}.a{stroke:#999;stroke-width:1}.t{font-size:10px;fill:#666}.m{font-size:10px;text-anchor:middle;fill:#666}.e{font-size:10px;text-anchor:end;fill:#666}.l{font-size:11px;fill:#333}.tt{font-size:14px;font-weight:600;text-anchor:middle;fill:#444}.em{font-size:13px;text-anchor:middle;fill:#999}</style>
-<text class="tt" x="400.0" y="24">出口国 Top15（共观测 17283）</text>
+<text class="tt" x="400.0" y="24">出口国 Top15（共观测 17729）</text>
 <line class="g" x1="46" y1="24" x2="46" y2="294"/>
-<line class="g" x1="214.8" y1="24" x2="214.8" y2="294"/>
-<line class="g" x1="383.6" y1="24" x2="383.6" y2="294"/>
-<line class="g" x1="552.4" y1="24" x2="552.4" y2="294"/>
-<text class="e" x="40" y="35">NL</text><rect x="46" y="26" width="662" height="10" fill="#58508d" rx="1.5"/><text class="t" x="712" y="35">3922</text>
-<text class="e" x="40" y="53">DE</text><rect x="46" y="44" width="648.2" height="10" fill="#58508d" rx="1.5"/><text class="t" x="698.2" y="53">3840</text>
-<text class="e" x="40" y="71">US</text><rect x="46" y="62" width="331" height="10" fill="#58508d" rx="1.5"/><text class="t" x="381" y="71">1961</text>
-<text class="e" x="40" y="89">FI</text><rect x="46" y="80" width="209.1" height="10" fill="#58508d" rx="1.5"/><text class="t" x="259.1" y="89">1239</text>
-<text class="e" x="40" y="107">GB</text><rect x="46" y="98" width="204.1" height="10" fill="#58508d" rx="1.5"/><text class="t" x="254.1" y="107">1209</text>
-<text class="e" x="40" y="125">FR</text><rect x="46" y="116" width="100.1" height="10" fill="#58508d" rx="1.5"/><text class="t" x="150.1" y="125">593</text>
-<text class="e" x="40" y="143">JP</text><rect x="46" y="134" width="97.7" height="10" fill="#58508d" rx="1.5"/><text class="t" x="147.7" y="143">579</text>
-<text class="e" x="40" y="161">SG</text><rect x="46" y="152" width="92.7" height="10" fill="#58508d" rx="1.5"/><text class="t" x="142.7" y="161">549</text>
-<text class="e" x="40" y="179">LV</text><rect x="46" y="170" width="84.9" height="10" fill="#58508d" rx="1.5"/><text class="t" x="134.9" y="179">503</text>
-<text class="e" x="40" y="197">RU</text><rect x="46" y="188" width="59.8" height="10" fill="#58508d" rx="1.5"/><text class="t" x="109.8" y="197">354</text>
-<text class="e" x="40" y="215">PL</text><rect x="46" y="206" width="43.4" height="10" fill="#58508d" rx="1.5"/><text class="t" x="93.4" y="215">257</text>
-<text class="e" x="40" y="233">HK</text><rect x="46" y="224" width="39.7" height="10" fill="#58508d" rx="1.5"/><text class="t" x="89.7" y="233">235</text>
-<text class="e" x="40" y="251">SE</text><rect x="46" y="242" width="39.5" height="10" fill="#58508d" rx="1.5"/><text class="t" x="89.5" y="251">234</text>
-<text class="e" x="40" y="269">CH</text><rect x="46" y="260" width="30.9" height="10" fill="#58508d" rx="1.5"/><text class="t" x="80.9" y="269">183</text>
-<text class="e" x="40" y="287">ES</text><rect x="46" y="278" width="26.7" height="10" fill="#58508d" rx="1.5"/><text class="t" x="76.7" y="287">158</text>
+<line class="g" x1="212.8" y1="24" x2="212.8" y2="294"/>
+<line class="g" x1="379.6" y1="24" x2="379.6" y2="294"/>
+<line class="g" x1="546.4" y1="24" x2="546.4" y2="294"/>
+<text class="e" x="40" y="35">NL</text><rect x="46" y="26" width="662" height="10" fill="#58508d" rx="1.5"/><text class="t" x="712" y="35">3969</text>
+<text class="e" x="40" y="53">DE</text><rect x="46" y="44" width="650.8" height="10" fill="#58508d" rx="1.5"/><text class="t" x="700.8" y="53">3902</text>
+<text class="e" x="40" y="71">US</text><rect x="46" y="62" width="334.1" height="10" fill="#58508d" rx="1.5"/><text class="t" x="384.1" y="71">2003</text>
+<text class="e" x="40" y="89">FI</text><rect x="46" y="80" width="207.8" height="10" fill="#58508d" rx="1.5"/><text class="t" x="257.8" y="89">1246</text>
+<text class="e" x="40" y="107">GB</text><rect x="46" y="98" width="205.0" height="10" fill="#58508d" rx="1.5"/><text class="t" x="255.0" y="107">1229</text>
+<text class="e" x="40" y="125">JP</text><rect x="46" y="116" width="109.6" height="10" fill="#58508d" rx="1.5"/><text class="t" x="159.6" y="125">657</text>
+<text class="e" x="40" y="143">SG</text><rect x="46" y="134" width="101.9" height="10" fill="#58508d" rx="1.5"/><text class="t" x="151.9" y="143">611</text>
+<text class="e" x="40" y="161">FR</text><rect x="46" y="152" width="100.6" height="10" fill="#58508d" rx="1.5"/><text class="t" x="150.6" y="161">603</text>
+<text class="e" x="40" y="179">LV</text><rect x="46" y="170" width="84.1" height="10" fill="#58508d" rx="1.5"/><text class="t" x="134.1" y="179">504</text>
+<text class="e" x="40" y="197">RU</text><rect x="46" y="188" width="59.4" height="10" fill="#58508d" rx="1.5"/><text class="t" x="109.4" y="197">356</text>
+<text class="e" x="40" y="215">PL</text><rect x="46" y="206" width="44.2" height="10" fill="#58508d" rx="1.5"/><text class="t" x="94.2" y="215">265</text>
+<text class="e" x="40" y="233">HK</text><rect x="46" y="224" width="41.2" height="10" fill="#58508d" rx="1.5"/><text class="t" x="91.2" y="233">247</text>
+<text class="e" x="40" y="251">SE</text><rect x="46" y="242" width="40.0" height="10" fill="#58508d" rx="1.5"/><text class="t" x="90.0" y="251">240</text>
+<text class="e" x="40" y="269">CH</text><rect x="46" y="260" width="31.2" height="10" fill="#58508d" rx="1.5"/><text class="t" x="81.2" y="269">187</text>
+<text class="e" x="40" y="287">ES</text><rect x="46" y="278" width="26.4" height="10" fill="#58508d" rx="1.5"/><text class="t" x="76.4" y="287">158</text>
 </svg>
