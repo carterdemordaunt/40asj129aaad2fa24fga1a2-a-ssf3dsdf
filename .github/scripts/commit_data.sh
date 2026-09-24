@@ -3,7 +3,7 @@
 #
 # 背景（lost-update 修复）：此前各工作流 `git add -Af data/` 全量快照提交，
 # 基于 checkout 时刻的工作树。当 job 运行期间其他工作流推送了新数据
-# （如 china.json），本 job 的重试路径 `reset --mixed origin/main +
+# （如 china.json），本 job 的重试路径 `reset --mixed origin/<target-branch> +
 # add -Af` 会用陈旧副本覆盖他人更新——曾把 07:52 的 china.json 回退到
 # 05:40 版本，导致 streak 连续计数清零、all_cn_stable.txt 近乎清空。
 #
@@ -14,6 +14,12 @@ set -uo pipefail
 MSG="${1:?usage: commit_data.sh <message>}"
 MARKER=".jobstart"
 EXCL='^(data/raw/|data/diff/)'
+TARGET_BRANCH="${TARGET_BRANCH:-$(git branch --show-current)}"
+
+if [ -z "$TARGET_BRANCH" ] || [ "$TARGET_BRANCH" = "HEAD" ]; then
+  echo "unable to determine target branch" >&2
+  exit 1
+fi
 
 # 无 .jobstart 标记 = 前置 touch 步缺失（改 workflow 时的常见失误）→ 明明有
 # 产出也会被 find -newer 静默吞掉并 no-op，数据永远不会提交。显式 fail-fast。
@@ -47,7 +53,7 @@ if [ -z "$CHANGED" ] && [ -z "$DELETED" ]; then
 fi
 
 align_foreign() {
-  # 工作树中非本产出的漂移文件对齐 index(=origin/main)，防回滚他人提交。
+  # 工作树中非本产出的漂移文件对齐 index(=origin/<target-branch>)，防回滚他人提交。
   # 本 job 的删除也属于产出，豁免恢复，否则删除会被 checkout -f 救回。
   # （reset --mixed 后 index=origin，diff 列出的 = 本产出 ∪ 陈旧外来文件）
   git diff --name-only -- data/ 2>/dev/null | grep -Ev "$EXCL" | sort \
@@ -58,12 +64,12 @@ align_foreign() {
 }
 
 for attempt in 1 2 3 4 5; do
-  git fetch origin main || { sleep 5; continue; }
-  git reset -q --mixed origin/main || { echo "git reset failed" >&2; exit 1; }
+  git fetch origin "$TARGET_BRANCH" || { sleep 5; continue; }
+  git reset -q --mixed "origin/$TARGET_BRANCH" || { echo "git reset failed" >&2; exit 1; }
   align_foreign
   # shellcheck disable=SC2086
   git add -Af -- $CHANGED || { echo "git add failed" >&2; exit 1; }
-  # 暂存本 job 的删除：仅取 reset 后 index(=origin/main) 中仍存在的路径，
+  # 暂存本 job 的删除：仅取 reset 后 index(=origin/<target-branch>) 中仍存在的路径，
   # 避免 pathspec 不匹配（他人已同步删除时自然 no-op）。
   STAGE_DEL=$(
     printf '%s\n' "$DELETED" | sed '/^$/d' \
