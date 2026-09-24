@@ -1,8 +1,8 @@
 {
-  "ts": "2026-09-24T14:55:17Z",
+  "ts": "2026-09-24T15:21:14Z",
   "updated_at": "2026-09-24T14:32:16Z",
-  "age_s": 1380.8510949611664,
-  "updated_ago": "23m ago",
+  "age_s": 2938.0867528915405,
+  "updated_ago": "48m ago",
   "stale": false,
   "unique": 20368,
   "total": 20385,
@@ -98,12 +98,12 @@
     "RES": 13253
   },
   "family": {
-    "ipv6": 11893,
-    "ipv4": 5488,
-    "unknown": 374,
-    "dual": 47
+    "ipv6": 11801,
+    "ipv4": 5451,
+    "unknown": 412,
+    "dual": 50
   },
-  "dual_stack": 47,
+  "dual_stack": 50,
   "country_mismatch": 106,
   "history_records": 216,
   "alive_history_records": 354,
