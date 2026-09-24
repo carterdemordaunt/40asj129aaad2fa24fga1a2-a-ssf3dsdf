@@ -1225,6 +1225,8 @@ class TestListCnDiscoverability(unittest.TestCase):
         import io
         from contextlib import redirect_stdout
         from unittest import mock
+        if cc._sources_registry() is None:
+            self.skipTest("needs PCB _sources bundle")
         with mock.patch.object(cc, "run_measurements",
                                side_effect=AssertionError("must not probe")):
             buf = io.StringIO()
@@ -4093,6 +4095,8 @@ class TestCnOverrideMatrixR89(unittest.TestCase):
         import io
         from contextlib import redirect_stderr
         from types import SimpleNamespace
+        if cc._sources_registry() is None:
+            self.skipTest("needs PCB _sources bundle")
         args = SimpleNamespace(
             cn_limit={"cn30": 1, "cn01": 1, "cn20": 1, "cn41": 1},
             cn_concurrency={}, cn_nodes={"cn30": 1, "cn07": 1})
