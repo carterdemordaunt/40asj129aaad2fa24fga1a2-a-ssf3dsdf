@@ -1,60 +1,60 @@
 {
   "sources": {
     "afr": {
-      "alive": 269,
-      "avg_latency": 428.6,
-      "avg_reputation": 88.4,
-      "avg_speed": 2.55,
-      "china_reachable_count": 204,
-      "china_reachable_rate": 0.7584,
+      "alive": 270,
+      "avg_latency": 424.8,
+      "avg_reputation": 86,
+      "avg_speed": 2.34,
+      "china_reachable_count": 206,
+      "china_reachable_rate": 0.763,
       "country_dist": {
         "AE": 4,
+        "AM": 3,
+        "AU": 3,
         "BD": 4,
-        "BG": 5,
-        "CA": 3,
-        "CN": 3,
-        "DE": 38,
+        "BG": 7,
+        "CA": 4,
+        "CH": 4,
+        "DE": 37,
         "EE": 3,
         "FI": 21,
-        "FR": 13,
-        "GB": 14,
-        "IN": 3,
-        "KZ": 4,
-        "LT": 4,
+        "FR": 11,
+        "GB": 13,
         "LV": 4,
-        "NL": 58,
-        "PL": 5,
+        "NL": 63,
+        "PL": 4,
         "RU": 8,
         "SE": 5,
         "SG": 4,
-        "US": 29
+        "TR": 3,
+        "US": 28
       },
       "family_dist": {
-        "dual": 4,
-        "ipv4": 209,
-        "ipv6": 51,
+        "dual": 5,
+        "ipv4": 208,
+        "ipv6": 53,
         "unknown": 5
       },
-      "median_latency": 276.0,
-      "median_speed": 1.92,
+      "median_latency": 292.5,
+      "median_speed": 1.77,
       "port_dist": {
-        "2053": 11,
-        "443": 222,
-        "8443": 36
+        "2053": 10,
+        "443": 223,
+        "8443": 37
       },
       "reputation_dist": {
         "high": 0,
-        "low": 206,
-        "medium": 39
+        "low": 34,
+        "medium": 9
       },
-      "survival_rate": 0.9573,
-      "total": 281
+      "survival_rate": 0.9541,
+      "total": 283
     },
     "cmliu": {
       "alive": 34,
-      "avg_latency": 312.6,
-      "avg_reputation": 89.3,
-      "avg_speed": 0.31,
+      "avg_latency": 321.2,
+      "avg_reputation": 86.5,
+      "avg_speed": 1.08,
       "china_reachable_count": 32,
       "china_reachable_rate": 0.9412,
       "country_dist": {
@@ -72,8 +72,8 @@
         "ipv6": 1,
         "unknown": 33
       },
-      "median_latency": 228.0,
-      "median_speed": 0.31,
+      "median_latency": 243.5,
+      "median_speed": 1.08,
       "port_dist": {
         "2083": 1,
         "443": 32,
@@ -81,19 +81,19 @@
       },
       "reputation_dist": {
         "high": 0,
-        "low": 26,
+        "low": 7,
         "medium": 1
       },
       "survival_rate": 0.0305,
       "total": 1113
     },
     "farel": {
-      "alive": 532,
-      "avg_latency": 308.0,
-      "avg_reputation": 88.8,
-      "avg_speed": 2.93,
-      "china_reachable_count": 412,
-      "china_reachable_rate": 0.7744,
+      "alive": 524,
+      "avg_latency": 313.6,
+      "avg_reputation": 89.3,
+      "avg_speed": 2.81,
+      "china_reachable_count": 411,
+      "china_reachable_rate": 0.7844,
       "country_dist": {
         "AE": 6,
         "AU": 21,
@@ -101,19 +101,19 @@
         "CA": 9,
         "CH": 8,
         "CL": 1,
-        "DE": 45,
-        "FR": 10,
+        "DE": 43,
+        "FR": 7,
         "GB": 24,
         "HK": 2,
         "IL": 1,
-        "IN": 32,
+        "IN": 33,
         "IT": 4,
-        "JP": 86,
-        "KR": 44,
+        "JP": 84,
+        "KR": 43,
         "MA": 2,
         "NL": 13,
         "SE": 2,
-        "SG": 75,
+        "SG": 74,
         "US": 138
       },
       "family_dist": {
@@ -122,24 +122,24 @@
         "ipv6": 106,
         "unknown": 29
       },
-      "median_latency": 301.5,
-      "median_speed": 1.84,
+      "median_latency": 279.5,
+      "median_speed": 1.73,
       "port_dist": {
-        "443": 532
+        "443": 524
       },
       "reputation_dist": {
         "high": 0,
-        "low": 426,
-        "medium": 24
+        "low": 159,
+        "medium": 4
       },
-      "survival_rate": 0.962,
+      "survival_rate": 0.9476,
       "total": 553
     },
     "list": {
       "alive": 32,
-      "avg_latency": 394.2,
+      "avg_latency": 375.3,
       "avg_reputation": 90,
-      "avg_speed": 0.09,
+      "avg_speed": 0.1,
       "china_reachable_count": 32,
       "china_reachable_rate": 1.0,
       "country_dist": {
@@ -154,260 +154,255 @@
       "family_dist": {
         "unknown": 32
       },
-      "median_latency": 425.0,
-      "median_speed": 0.09,
+      "median_latency": 403.0,
+      "median_speed": 0.1,
       "port_dist": {
         "443": 32
       },
       "reputation_dist": {
         "high": 0,
-        "low": 21,
+        "low": 4,
         "medium": 0
       },
       "survival_rate": 0.2177,
       "total": 147
     },
     "main": {
-      "alive": 16507,
-      "avg_latency": 294.2,
-      "avg_reputation": 89.3,
-      "avg_speed": 2.39,
-      "china_reachable_count": 14600,
-      "china_reachable_rate": 0.8845,
+      "alive": 16491,
+      "avg_latency": 294.3,
+      "avg_reputation": 88.5,
+      "avg_speed": 2.2,
+      "china_reachable_count": 14592,
+      "china_reachable_rate": 0.8848,
       "country_dist": {
         "AT": 99,
         "CA": 97,
-        "CH": 171,
-        "CZ": 112,
-        "DE": 3760,
+        "CH": 172,
+        "CZ": 115,
+        "DE": 3754,
         "EE": 142,
-        "ES": 158,
-        "FI": 1210,
-        "FR": 579,
+        "ES": 155,
+        "FI": 1189,
+        "FR": 574,
         "GB": 1158,
-        "HK": 230,
-        "JP": 520,
-        "KZ": 101,
-        "LV": 491,
-        "NL": 3821,
-        "PL": 253,
-        "RU": 339,
+        "HK": 232,
+        "JP": 519,
+        "KZ": 99,
+        "LV": 495,
+        "NL": 3820,
+        "PL": 258,
+        "RU": 345,
         "SE": 229,
         "SG": 503,
-        "US": 1786
+        "US": 1783
       },
       "family_dist": {
         "dual": 43,
-        "ipv4": 4751,
-        "ipv6": 11594,
+        "ipv4": 4742,
+        "ipv6": 11593,
         "unknown": 119
       },
-      "median_latency": 238.0,
-      "median_speed": 1.96,
+      "median_latency": 255.0,
+      "median_speed": 1.8,
       "port_dist": {
-        "2053": 1563,
-        "2083": 590,
+        "2053": 1568,
+        "2083": 589,
         "2087": 574,
-        "2096": 513,
-        "443": 9625,
-        "8443": 3642
-      },
-      "reputation_dist": {
-        "high": 1,
-        "low": 13162,
-        "medium": 1240
-      },
-      "survival_rate": 0.9834,
-      "total": 16785
-    },
-    "multi": {
-      "alive": 88,
-      "avg_latency": 309.3,
-      "avg_reputation": 79.4,
-      "avg_speed": 2.34,
-      "china_reachable_count": 78,
-      "china_reachable_rate": 0.8864,
-      "country_dist": {
-        "AU": 3,
-        "BG": 1,
-        "BR": 1,
-        "CH": 2,
-        "DE": 22,
-        "FI": 1,
-        "FR": 2,
-        "GB": 1,
-        "HK": 3,
-        "IN": 3,
-        "IT": 1,
-        "JP": 12,
-        "KR": 7,
-        "LV": 1,
-        "NL": 11,
-        "SG": 5,
-        "US": 12
-      },
-      "family_dist": {
-        "dual": 1,
-        "ipv4": 49,
-        "ipv6": 9,
-        "unknown": 29
-      },
-      "median_latency": 261.5,
-      "median_speed": 1.94,
-      "port_dist": {
-        "2053": 1,
-        "2087": 1,
-        "443": 80,
-        "8443": 6
+        "2096": 512,
+        "443": 9617,
+        "8443": 3631
       },
       "reputation_dist": {
         "high": 0,
-        "low": 46,
-        "medium": 27
+        "low": 3914,
+        "medium": 398
       },
-      "survival_rate": 0.419,
-      "total": 210
+      "survival_rate": 0.9827,
+      "total": 16782
+    },
+    "multi": {
+      "alive": 89,
+      "avg_latency": 352.9,
+      "avg_reputation": 76.7,
+      "avg_speed": 2.32,
+      "china_reachable_count": 74,
+      "china_reachable_rate": 0.8315,
+      "country_dist": {
+        "AU": 4,
+        "BR": 1,
+        "CA": 1,
+        "CZ": 1,
+        "DE": 22,
+        "FI": 1,
+        "FR": 4,
+        "GB": 1,
+        "HK": 4,
+        "IE": 1,
+        "IN": 3,
+        "IR": 1,
+        "IT": 1,
+        "JP": 10,
+        "KR": 7,
+        "LV": 1,
+        "NL": 7,
+        "PL": 1,
+        "SG": 6,
+        "US": 11
+      },
+      "family_dist": {
+        "ipv4": 50,
+        "ipv6": 7,
+        "unknown": 30
+      },
+      "median_latency": 280.0,
+      "median_speed": 1.76,
+      "port_dist": {
+        "2053": 2,
+        "2087": 1,
+        "443": 81,
+        "8443": 5
+      },
+      "reputation_dist": {
+        "high": 0,
+        "low": 9,
+        "medium": 16
+      },
+      "survival_rate": 0.4218,
+      "total": 211
     },
     "proxyip": {
-      "alive": 16,
-      "avg_latency": 493.2,
-      "avg_reputation": 90,
-      "avg_speed": 1.25,
-      "china_reachable_count": 15,
-      "china_reachable_rate": 0.9375,
+      "alive": 15,
+      "avg_latency": 416.8,
+      "avg_reputation": null,
+      "avg_speed": 0.93,
+      "china_reachable_count": 14,
+      "china_reachable_rate": 0.9333,
       "country_dist": {
         "CN": 1,
-        "JP": 9,
+        "JP": 8,
         "SG": 6
       },
       "family_dist": {
         "ipv4": 1,
         "unknown": 15
       },
-      "median_latency": 441.0,
-      "median_speed": 1.25,
+      "median_latency": 411.0,
+      "median_speed": 0.93,
+      "port_dist": {
+        "443": 15
+      },
+      "reputation_dist": {
+        "high": 0,
+        "low": 0,
+        "medium": 0
+      },
+      "survival_rate": 0.0598,
+      "total": 251
+    },
+    "wanwu": {
+      "alive": 16,
+      "avg_latency": 266.7,
+      "avg_reputation": 93.3,
+      "avg_speed": 2.22,
+      "china_reachable_count": 11,
+      "china_reachable_rate": 0.6875,
+      "country_dist": {
+        "CH": 2,
+        "DE": 1,
+        "FI": 1,
+        "KR": 7,
+        "PL": 1,
+        "TW": 1,
+        "US": 3
+      },
+      "family_dist": {
+        "ipv4": 10
+      },
+      "median_latency": 306.5,
+      "median_speed": 1.55,
       "port_dist": {
         "443": 16
       },
       "reputation_dist": {
         "high": 0,
-        "low": 6,
+        "low": 3,
         "medium": 0
       },
-      "survival_rate": 0.0637,
-      "total": 251
-    },
-    "wanwu": {
-      "alive": 14,
-      "avg_latency": 237.1,
-      "avg_reputation": 89.5,
-      "avg_speed": 3.03,
-      "china_reachable_count": 10,
-      "china_reachable_rate": 0.7143,
-      "country_dist": {
-        "CH": 2,
-        "DE": 1,
-        "FI": 1,
-        "KR": 1,
-        "LV": 1,
-        "NL": 1,
-        "PL": 1,
-        "SE": 1,
-        "TW": 1,
-        "US": 4
-      },
-      "family_dist": {
-        "ipv4": 14
-      },
-      "median_latency": 239.5,
-      "median_speed": 1.9,
-      "port_dist": {
-        "443": 14
-      },
-      "reputation_dist": {
-        "high": 0,
-        "low": 10,
-        "medium": 2
-      },
       "survival_rate": 1.0,
-      "total": 14
+      "total": 16
     },
     "wentao": {
-      "alive": 33,
-      "avg_latency": 101.5,
-      "avg_reputation": 80.7,
-      "avg_speed": 31.0,
-      "china_reachable_count": 28,
-      "china_reachable_rate": 0.8485,
+      "alive": 15,
+      "avg_latency": 135.5,
+      "avg_reputation": 81.6,
+      "avg_speed": 9.44,
+      "china_reachable_count": 8,
+      "china_reachable_rate": 0.5333,
       "country_dist": {
-        "AE": 1,
-        "CY": 1,
-        "DE": 2,
-        "FR": 2,
+        "DE": 1,
+        "GB": 1,
         "IT": 1,
-        "NA": 19,
+        "LT": 1,
+        "NA": 6,
         "NL": 2,
-        "PL": 1,
-        "RU": 2,
-        "US": 2
+        "US": 3
       },
       "family_dist": {
-        "ipv4": 28,
-        "ipv6": 5
+        "ipv4": 4,
+        "ipv6": 1
       },
-      "median_latency": 34.0,
-      "median_speed": 17.21,
+      "median_latency": 102.0,
+      "median_speed": 4.1,
       "port_dist": {
-        "443": 30,
-        "8443": 3
+        "443": 15
       },
       "reputation_dist": {
         "high": 0,
-        "low": 21,
-        "medium": 12
+        "low": 7,
+        "medium": 3
       },
       "survival_rate": 1.0,
-      "total": 33
+      "total": 15
     },
     "wwuyi": {
       "alive": 40,
-      "avg_latency": 345.6,
-      "avg_reputation": 69.8,
-      "avg_speed": 9.33,
-      "china_reachable_count": 28,
-      "china_reachable_rate": 0.7,
+      "avg_latency": 414.0,
+      "avg_reputation": 63.5,
+      "avg_speed": 5.51,
+      "china_reachable_count": 29,
+      "china_reachable_rate": 0.725,
       "country_dist": {
         "DE": 6,
         "GB": 1,
-        "HK": 8,
+        "HK": 7,
         "JP": 10,
         "SE": 1,
         "SG": 6,
-        "US": 7,
+        "US": 8,
         "VN": 1
       },
       "family_dist": {
         "ipv4": 15,
         "ipv6": 3,
-        "unknown": 22
+        "unknown": 21
       },
-      "median_latency": 339.5,
-      "median_speed": 2.02,
+      "median_latency": 279.5,
+      "median_speed": 1.87,
       "port_dist": {
         "443": 40
       },
       "reputation_dist": {
         "high": 0,
-        "low": 15,
-        "medium": 21
+        "low": 1,
+        "medium": 22
       },
-      "survival_rate": 0.32,
-      "total": 125
+      "survival_rate": 0.3226,
+      "total": 124
     },
     "ymyuuu": {
       "alive": 136,
-      "avg_latency": 356.1,
-      "avg_reputation": 88.2,
+      "avg_latency": 347.4,
+      "avg_reputation": 88.8,
       "avg_speed": null,
       "china_reachable_count": 130,
       "china_reachable_rate": 0.9559,
@@ -426,21 +421,21 @@
       "family_dist": {
         "unknown": 136
       },
-      "median_latency": 333.0,
+      "median_latency": 325.0,
       "median_speed": null,
       "port_dist": {
         "443": 136
       },
       "reputation_dist": {
         "high": 0,
-        "low": 99,
-        "medium": 7
+        "low": 23,
+        "medium": 1
       },
       "survival_rate": 0.1521,
       "total": 894
     }
   },
-  "total_alive": 17701,
-  "total_proxies": 20406,
-  "ts": "2026-09-24T22:23:37Z"
+  "total_alive": 17662,
+  "total_proxies": 20389,
+  "ts": "2026-09-24T23:14:43Z"
 }
