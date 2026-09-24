@@ -31,8 +31,8 @@
       },
       "family_dist": {
         "dual": 5,
-        "ipv4": 208,
-        "ipv6": 53,
+        "ipv4": 209,
+        "ipv6": 51,
         "unknown": 5
       },
       "median_latency": 292.5,
@@ -118,9 +118,9 @@
       },
       "family_dist": {
         "dual": 6,
-        "ipv4": 391,
-        "ipv6": 106,
-        "unknown": 29
+        "ipv4": 384,
+        "ipv6": 103,
+        "unknown": 31
       },
       "median_latency": 279.5,
       "median_speed": 1.73,
@@ -197,10 +197,10 @@
         "US": 1783
       },
       "family_dist": {
-        "dual": 43,
-        "ipv4": 4742,
-        "ipv6": 11593,
-        "unknown": 119
+        "dual": 29,
+        "ipv4": 4748,
+        "ipv6": 11590,
+        "unknown": 124
       },
       "median_latency": 255.0,
       "median_speed": 1.8,
@@ -250,9 +250,9 @@
         "US": 11
       },
       "family_dist": {
-        "ipv4": 50,
-        "ipv6": 7,
-        "unknown": 30
+        "ipv4": 54,
+        "ipv6": 8,
+        "unknown": 27
       },
       "median_latency": 280.0,
       "median_speed": 1.76,
@@ -284,7 +284,7 @@
       },
       "family_dist": {
         "ipv4": 1,
-        "unknown": 15
+        "unknown": 14
       },
       "median_latency": 411.0,
       "median_speed": 0.93,
@@ -316,7 +316,7 @@
         "US": 3
       },
       "family_dist": {
-        "ipv4": 10
+        "ipv4": 16
       },
       "median_latency": 306.5,
       "median_speed": 1.55,
@@ -348,8 +348,8 @@
         "US": 3
       },
       "family_dist": {
-        "ipv4": 4,
-        "ipv6": 1
+        "ipv4": 12,
+        "ipv6": 3
       },
       "median_latency": 102.0,
       "median_speed": 4.1,
@@ -382,9 +382,9 @@
         "VN": 1
       },
       "family_dist": {
-        "ipv4": 15,
-        "ipv6": 3,
-        "unknown": 21
+        "ipv4": 16,
+        "ipv6": 4,
+        "unknown": 20
       },
       "median_latency": 279.5,
       "median_speed": 1.87,
@@ -437,5 +437,5 @@
   },
   "total_alive": 17662,
   "total_proxies": 20389,
-  "ts": "2026-09-24T23:15:20Z"
+  "ts": "2026-09-24T23:40:59Z"
 }
