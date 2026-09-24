@@ -3361,7 +3361,9 @@ class TestExternalCheck(unittest.TestCase):
         self.assertEqual(
             set(meta),
             {"ts", "total", "tls", "by_type", "risk", "abuse_checked",
-             "reputation_checked", "rep_dist", "rep_avg", "rep_median",
+             "reputation_checked", "reputation_coverage",
+             "reputation_degraded", "reputation_published", "rep_dist",
+             "rep_avg", "rep_median",
              "country_mismatch", "ext_check_total", "ext_check_ok",
              "skipped"},
         )
@@ -3390,6 +3392,9 @@ class TestExternalCheck(unittest.TestCase):
         self.assertEqual(meta["rep_dist"],
                          {"0-25": 1, "25-50": 1, "50-75": 1, "75-100": 1})
         self.assertEqual(meta["reputation_checked"], 4)
+        self.assertEqual(meta["reputation_coverage"], 0.8)
+        self.assertFalse(meta["reputation_degraded"])
+        self.assertTrue(meta["reputation_published"])
         self.assertEqual(meta["by_type"], {"datacenter": 1})
         self.assertEqual(meta["country_mismatch"], 1)
 
@@ -3816,6 +3821,13 @@ class TestRepSourcesRegistryWiring(unittest.TestCase):
             return lp("_rep_sources")
         except Exception:
             self.skipTest("needs PCB _rep_sources bundle")
+
+    def test_unavailable_sources_are_reported(self):
+        with unittest.mock.patch.object(qr, "netcoffee_lookup_sync", None):
+            self.assertEqual(
+                qr.unavailable_reputation_sources(["netcoffee"]),
+                ["netcoffee"],
+            )
 
     def test_public_tables_are_pcb_objects(self):
         reg = self._reg()

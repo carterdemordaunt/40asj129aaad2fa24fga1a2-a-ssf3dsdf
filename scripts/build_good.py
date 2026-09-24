@@ -54,7 +54,9 @@ from common import (
     DATA_DIR,
     EXIT_FAMILY_FILE,
     LATENCY_RE,
+    MIN_REP_COVERAGE,
     REPUTATION_FILE,
+    QUALITY_META_FILE,
     SPEED_RE,
     cn_fastest_ms,
     line_to_key,
@@ -75,7 +77,6 @@ LATENCY_WORST_MS = 1500
 SPEED_FULL_MBPS = 5.0
 
 MIN_REP_SCORE = 80
-MIN_REP_COVERAGE = 0.25
 
 WEIGHT_REP = 0.6
 WEIGHT_LATENCY = 0.2
@@ -523,6 +524,7 @@ def main(argv: list[str] | None = None) -> int:
     current_rep_map = build_rep_map(
         read_json(quality_dir / REPUTATION_FILE.name)
     )
+    quality_meta = read_json(quality_dir / QUALITY_META_FILE.name)
     all_pool = valid_dir / "all.txt"
     all_pool_text = (
         all_pool.read_text(encoding="utf-8") if all_pool.exists() else ""
@@ -554,6 +556,12 @@ def main(argv: list[str] | None = None) -> int:
             # reputation refresh would make recovery impossible.
             covered = len(pool_keys & set(current_rep_map))
             ratio = covered / len(pool_keys)
+            if quality_meta.get("reputation_degraded") is True:
+                checked = quality_meta.get("reputation_checked")
+                total = quality_meta.get("total")
+                if isinstance(checked, int) and isinstance(total, int) and total > 0:
+                    covered = min(checked, len(pool_keys))
+                    ratio = covered / len(pool_keys)
             existing_good = any(
                 path.is_file()
                 for pattern in ("all_good*.txt", "good*.txt")

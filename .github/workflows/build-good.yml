@@ -7,10 +7,8 @@ on:
   # speed.json（质量链产出）——此前挂在两条链内部重复执行且互相覆盖，
   # 独立后响应更快。
   #
-  # 注：build_good.py 并非单一写入者——annotate-classify 与 exit-family
-  # 工作流（均由 quality-check 完成事件触发）也会调用它/annotate_classify，
-  # 跨 runner 并发写 data/valid/*.txt 与 good 清单，各自后 push 胜出；
-  # 属设计内（数据链下一轮自愈），勿在别处声称「单一写入者」。
+  # good/premium/tier 产物只在本工作流生成；annotate-classify 与
+  # exit-family 仅提交各自的注解/出口家族数据，避免跨 runner 互相覆盖。
   workflow_run:
     workflows: ["Quality check", "China check"]
     types: [completed]
@@ -67,7 +65,20 @@ jobs:
         id: good
         if: steps.gate.outputs.skip != 'true'
         run: |
+          set +e
           python scripts/build_good.py
+          rc=$?
+          set -e
+
+          if [ "$rc" -eq 2 ]; then
+            echo "protected_skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Good rebuild protected because reputation coverage is too low"
+            exit 0
+          fi
+          if [ "$rc" -ne 0 ]; then
+            exit "$rc"
+          fi
+
           python scripts/build_premium.py
 
       # 提交前护栏：构建产物必须通过 CN 视图不变式（good/premium 家族不得
@@ -76,7 +87,7 @@ jobs:
       # 提交前校验被改动后的树，失败即中止不再提交。
       - name: Verify CN-view invariant
         id: verify
-        if: steps.gate.outputs.skip != 'true' && steps.good.outcome == 'success'
+        if: steps.gate.outputs.skip != 'true' && steps.good.outcome == 'success' && steps.good.outputs.protected_skip != 'true'
         run: >-
           python -m unittest
           tests.test_build_good.TestCommittedCnViewInvariant.test_no_plain_overseas_speed_in_good_premium
@@ -86,6 +97,6 @@ jobs:
       # 图表/渲染由专职 stats 工作流在 "Build good lists" 完成后统一重建（单一写入者）
 
       - name: Commit changes
-        if: steps.gate.outputs.skip != 'true' && steps.good.outcome == 'success' && steps.verify.outcome == 'success'
+        if: steps.gate.outputs.skip != 'true' && steps.good.outcome == 'success' && steps.good.outputs.protected_skip != 'true' && steps.verify.outcome == 'success'
         run: |
           bash .github/scripts/commit_data.sh "chore(data): good tiers & variants ($(date -u +%Y-%m-%dT%H:%M:%SZ))"

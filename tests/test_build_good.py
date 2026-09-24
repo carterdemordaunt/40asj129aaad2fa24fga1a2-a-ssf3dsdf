@@ -568,6 +568,39 @@ class TestWriteGoodFiles(unittest.TestCase):
             self.assertEqual(rc, 2)
             self.assertEqual(stale.read_text(), "keep-me\n")
 
+    def test_main_preserves_outputs_when_quality_meta_marks_degraded_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            valid = data_dir / "valid"
+            quality = data_dir / "quality"
+            valid.mkdir(parents=True)
+            quality.mkdir(parents=True)
+            lines = [
+                f"10.0.0.{i}:443#US-50ms-5.00MB/s-CN-90"
+                for i in range(1, 101)
+            ]
+            (valid / "all.txt").write_text("\n".join(lines) + "\n")
+            # The file itself looks complete, but metadata says this run could
+            # not publish its partial reputation snapshot.
+            (quality / "reputation.json").write_text(json.dumps({
+                "proxies": {
+                    f"10.0.0.{i}:443#US": {"score": 90, "risk": "low"}
+                    for i in range(1, 101)
+                }
+            }))
+            (quality / "quality_meta.json").write_text(json.dumps({
+                "total": 100,
+                "reputation_checked": 1,
+                "reputation_degraded": True,
+            }))
+            stale = valid / "all_good.txt"
+            stale.write_text("keep-me\n")
+
+            rc = bg.main(["--data-dir", str(data_dir)])
+
+            self.assertEqual(rc, 2)
+            self.assertEqual(stale.read_text(), "keep-me\n")
+
     def test_main_recovers_deleted_outputs_from_inline_scores(self):
         with tempfile.TemporaryDirectory() as tmp:
             data_dir = Path(tmp)

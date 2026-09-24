@@ -67,17 +67,12 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         run: python scripts/annotate_classify.py
 
-      - name: Build good lists
-        id: good
-        if: steps.gate.outputs.skip != 'true'
-        run: python scripts/build_good.py
-
       # 提交前护栏：构建产物必须通过 CN 视图不变式（good/premium 家族不得
       # 混入海外实测 -XMB/s）。tests 步先于数据改动执行、抓不到改后状态，
       # 此处对已落盘数据校验，失败即中止不再提交。
       - name: Verify CN-view invariant
         id: verify
-        if: steps.gate.outputs.skip != 'true' && steps.good.outcome == 'success'
+        if: steps.gate.outputs.skip != 'true' && steps.exit.outcome == 'success' && steps.annotate.outcome == 'success'
         run: >-
           python -m unittest
           tests.test_build_good.TestCommittedCnViewInvariant.test_no_plain_overseas_speed_in_good_premium
@@ -98,6 +93,7 @@ jobs:
             data/quality/exit_family.json 2>/dev/null || true
 
       - name: Commit changes
-        if: steps.gate.outputs.skip != 'true' && steps.exit.outcome == 'success' && steps.annotate.outcome == 'success' && steps.good.outcome == 'success' && steps.verify.outcome == 'success'
+        # 仅提交出口家族/注解产物；good/premium 由专职 build-good 工作流唯一写入。
+        if: steps.gate.outputs.skip != 'true' && steps.exit.outcome == 'success' && steps.annotate.outcome == 'success' && steps.verify.outcome == 'success'
         run: |
           bash .github/scripts/commit_data.sh "chore(data): exit ipv4/ipv6 split + suffix filling ($(date -u +%Y-%m-%dT%H:%M:%SZ))"

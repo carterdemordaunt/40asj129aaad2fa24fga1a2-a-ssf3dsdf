@@ -803,6 +803,47 @@ FREEIPAPI_CAP = 3000
 SCAMALYTICS_CAP = 1500
 IPLOCATION_CAP = 3000
 
+# These providers are intentionally optional: their implementations live in
+# the private PCB bundle in the upstream project. Keep the availability check
+# explicit so a public run cannot look as if all configured sources responded.
+_REP_LOOKUP_BINDINGS = {
+    "netcoffee": "netcoffee_lookup_sync",
+    "ncgy": "ncgy_lookup_sync",
+    "greynoise": "greynoise_lookup_sync",
+    "ipdata": "ipdata_lookup_sync",
+    "getipintel": "getipintel_lookup_sync",
+    "ipapi_is": "ipapi_is_lookup_sync",
+    "ipquery": "ipquery_lookup_sync",
+    "ffraud": "ffraud_lookup_sync",
+    "whatismyip": "whatismyip_lookup_sync",
+    "blackbox": "blackbox_lookup_sync",
+    "otx": "otx_lookup_sync",
+    "proxycheck": "proxycheck_lookup_sync",
+    "ip2location": "ip2location_lookup_sync",
+    "ipwhois": "ipwhois_lookup_sync",
+    "stopforumspam": "stopforumspam_lookup_sync",
+    "maltiverse": "maltiverse_lookup_sync",
+    "dnsbl": "dnsbl_lookup_sync",
+    "spamcop": "spamcop_lookup_sync",
+    "dronebl": "dronebl_lookup_sync",
+    "spamrats": "spamrats_lookup_sync",
+    "sorbs": "sorbs_lookup_sync",
+    "uceprotect": "uceprotect_lookup_sync",
+    "psbl": "psbl_lookup_sync",
+    "freeipapi": "freeipapi_lookup_sync",
+    "hackmyip": "hackmyip_lookup_sync",
+    "scamalytics": "scamalytics_lookup_sync",
+    "iplocation": "iplocation_lookup_sync",
+}
+
+
+def unavailable_reputation_sources(sources) -> list[str]:
+    """Return configured per-IP sources with no loaded implementation."""
+    return sorted(
+        name for name, binding in _REP_LOOKUP_BINDINGS.items()
+        if name in sources and globals().get(binding) is None
+    )
+
 
 async def fetch_text_list(url: str, timeout: float = STATIC_LIST_TIMEOUT) -> set[str]:
     """Fetch a static list; any failure returns an empty set (fail-open).
@@ -2015,6 +2056,13 @@ async def lookup_all_risk(
     sources = args.reputation_sources
     if not sources:
         return {}
+    unavailable = unavailable_reputation_sources(sources)
+    if unavailable:
+        print(
+            "Reputation providers unavailable (PCB bundle not loaded): "
+            + ", ".join(unavailable),
+            file=sys.stderr,
+        )
     risk_data: dict[str, dict] = {}
 
     def put(name: str, ip: str, signal) -> None:

@@ -74,6 +74,9 @@ VALID_ALL_IPV6_FILE = VALID_DIR / "all_ipv6.txt"
 VALID_META_FILE = VALID_DIR / "meta.json"
 
 REP_CACHE_TTL = 7 * 24 * 3600
+# 信誉覆盖率保护阈值：这是防止 provider 故障清空 good 的保险丝，
+# 不是 good 节点筛选阈值。build_good 与 quality_check 共用，避免两处漂移。
+MIN_REP_COVERAGE = 0.25
 DEFAULT_SOURCE = VALID_DIR / "all.txt"
 
 MAX_HISTORY_RECORDS = 1000

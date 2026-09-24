@@ -465,6 +465,8 @@ def build_meta(
     results: dict, ipinfo: dict, abuse_map: dict,
     rep_map: dict | None = None,
     skipped: list | None = None,
+    reputation_degraded: bool = False,
+    reputation_published: bool = True,
 ) -> dict:
     rep_map = rep_map or {}
     by_type = Counter(info["ip_type"] for info in ipinfo.values())
@@ -494,6 +496,10 @@ def build_meta(
     )
     _s_reps = sorted(reps)
     _n_reps = len(_s_reps)
+    total_results = len(results)
+    reputation_coverage = (
+        round(_n_reps / total_results, 4) if total_results else 0.0
+    )
     rep_median = (
         round(_s_reps[_n_reps // 2] if _n_reps % 2
               else (_s_reps[_n_reps // 2 - 1] + _s_reps[_n_reps // 2]) / 2, 1)
@@ -507,6 +513,9 @@ def build_meta(
         "risk": dict(sorted(risk.items())),
         "abuse_checked": len(abuse_map),
         "reputation_checked": len(reps),
+        "reputation_coverage": reputation_coverage,
+        "reputation_degraded": bool(reputation_degraded),
+        "reputation_published": bool(reputation_published),
         "rep_dist": rep_dist,
         "rep_avg": (round(sum(reps) / len(reps), 1) if reps else None),
         "rep_median": rep_median,
@@ -668,9 +677,33 @@ async def run(args: argparse.Namespace) -> int:
         geo=geo,
     )
 
-    annotations = build_annotations(results, rep_map)
+    result_keys = {
+        res.get("key") for res in results.values() if res.get("key")
+    }
+    rep_keys = set(rep_map) & result_keys
+    rep_coverage = len(rep_keys) / len(result_keys) if result_keys else 0.0
+    has_previous_rep = REPUTATION_FILE.exists()
+    reputation_degraded = (
+        len(result_keys) >= 100
+        and rep_coverage < MIN_REP_COVERAGE
+        and has_previous_rep
+    )
+    reputation_published = not reputation_degraded
+    if reputation_degraded:
+        print(
+            "Refusing to publish partial reputation snapshot: "
+            f"coverage {len(rep_keys)}/{len(result_keys)} "
+            f"({rep_coverage:.1%}) is below {MIN_REP_COVERAGE:.1%}; "
+            "previous reputation outputs preserved",
+            file=sys.stderr,
+        )
+        # Keep the line annotations aligned with the preserved reputation
+        # snapshot. The current partial scores remain visible in quality_meta.
+        annotations = {}
+    else:
+        annotations = build_annotations(results, rep_map)
     source_text = args.source.read_text(encoding="utf-8")
-    if rep_map:
+    if rep_map and reputation_published:
         write_reputation_files(source_text, annotations, rep_map)
 
     # Extract and persist external check results
@@ -689,7 +722,11 @@ async def run(args: argparse.Namespace) -> int:
     STREAMING_FILE.unlink(missing_ok=True)  # 流媒体检查已移除，清理遗留产物
     if abuse_map:
         write_json(ABUSE_FILE, keyed_json(abuse_map))
-    meta = build_meta(results, ipinfo, abuse_map, rep_map, skipped)
+    meta = build_meta(
+        results, ipinfo, abuse_map, rep_map, skipped,
+        reputation_degraded=reputation_degraded,
+        reputation_published=reputation_published,
+    )
     write_json(QUALITY_META_FILE, meta)
     annotate_valid_files(annotations)
 

@@ -278,7 +278,7 @@ Status 徽章端点数据（shields.io `endpoint` 格式，供 README 徽章与�
 
 ### `data/quality/quality_meta.json`
 
-质量检测汇总（供 stats 消费）：`ts`（生成时间戳 ISO-8601）、`total`（代理总数）、`tls`（参与本轮质量检测的键数——quality 链以外部 API 回显判活、不做本地 TLS 握手，故含 validate `--ext-check` 复活的 `method=ext` 键，勿与 `index.json` 的 by_method 口径混用）、`by_type`（IP 类型分布）、`ext_check_total`/`ext_check_ok`（外部 API 检查计数，`ok`=被外检覆盖的 TLS 存活键数 + 外检复活键数）、`country_mismatch`（错区数）、`risk`、`abuse_checked`、`reputation_checked`（获分条数）、`rep_dist`（0-25/25-50/50-75/75-100 分桶）、`rep_avg`/`rep_median`、`skipped`（本轮因 time-budget 耗尽而未执行的相位名列表，如 `ip-api geo`/`reputation lookup`；空列表=完整批次，供下游识别降级批）。
+质量检测汇总（供 stats 消费）：`ts`（生成时间戳 ISO-8601）、`total`（代理总数）、`tls`（参与本轮质量检测的键数——quality 链以外部 API 回显判活、不做本地 TLS 握手，故含 validate `--ext-check` 复活的 `method=ext` 键，勿与 `index.json` 的 by_method 口径混用）、`by_type`（IP 类型分布）、`ext_check_total`/`ext_check_ok`（外部 API 检查计数，`ok`=被外检覆盖的 TLS 存活键数 + 外检复活键数）、`country_mismatch`（错区数）、`risk`、`abuse_checked`、`reputation_checked`（本轮获分条数）、`reputation_coverage`（本轮信誉覆盖率）、`reputation_degraded`（覆盖率低于 25% 且保留旧快照时为 `true`）、`reputation_published`（本轮是否替换信誉产物）、`rep_dist`（0-25/25-50/50-75/75-100 分桶）、`rep_avg`/`rep_median`、`skipped`（本轮因 time-budget 耗尽而未执行的相位名列表，如 `ip-api geo`/`reputation lookup`；空列表=完整批次，供下游识别降级批）。信誉覆盖率保护是发布保险丝，不是 good 节点筛选条件。
 
 ### `data/quality/abuse.json`
 
