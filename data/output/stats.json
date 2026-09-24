@@ -1,9 +1,9 @@
 {
-  "ts": "2026-09-24T15:21:14Z",
+  "ts": "2026-09-24T18:28:38Z",
   "updated_at": "2026-09-24T14:32:16Z",
-  "age_s": 2938.0867528915405,
-  "updated_ago": "48m ago",
-  "stale": false,
+  "age_s": 14182.321161031723,
+  "updated_ago": "3h 56m ago",
+  "stale": true,
   "unique": 20368,
   "total": 20385,
   "countries": 81,
@@ -110,6 +110,6 @@
   "cn_reachable": 15600,
   "cn_http": 0,
   "cn_stable": 0,
-  "cn_served": 15125,
-  "cn_ts": "2026-09-24T14:13:38Z"
+  "cn_served": 15600,
+  "cn_ts": "2026-09-24T18:28:06Z"
 }
