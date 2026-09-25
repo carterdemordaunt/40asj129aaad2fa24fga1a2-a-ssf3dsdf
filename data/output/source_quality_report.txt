@@ -1,4 +1,4 @@
-Source Quality Report  (2026-09-25T00:48:46Z)
+Source Quality Report  (2026-09-25T01:29:38Z)
 Total: 20389 proxies, 17662 alive
 
 Source                  Total  Alive  Surv%  Lat(ms)  Spd(MB)   Rep    CN%
