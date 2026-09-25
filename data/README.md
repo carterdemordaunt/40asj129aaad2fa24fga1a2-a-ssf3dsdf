@@ -1,6 +1,6 @@
 # data/ 数据目录索引
 
-本目录**全部文件由 CI 脚本自动生成**（`.github/workflows/*.yml`），人工不要直接改
+本目录的当前生产文件由 `update-proxies.yml` 与 `europe-check.yml` 自动生成，人工不要直接改
 数据文件，需要重生成请运行对应脚本。`data/` 被 `.gitignore` 忽略，只有脚本产出的
 差异会被 `commit_data.sh` 增量提交（基于 `.jobstart` 时间戳的 `find -newer`）。
 
@@ -27,8 +27,8 @@ data/
 
 | 层 | 物理目录 | 语义 | 典型消费者 |
 |----|----------|------|-----------|
-| 采集层（Ingest） | `raw/`, `download/` | 上游原始数据与切片 | 验证脚本、deep-speed |
-| 判定层（Probe） | `quality/` | 可达性/延迟/信誉/大陆判定等探测明细 | china-check、build_good、health |
+| 采集层（Ingest） | `raw/`, `download/` | 上游原始数据与切片 | 验证脚本 |
+| 判定层（Probe） | `quality/` | 欧洲侧可达性/延迟与历史探测明细 | europe-check |
 | 发布层（Release） | `valid/` | 整理后可直接使用的清单变体 | 各 `*.yml` 下游、仓库用户 |
 | 观测层（Observe） | `output/` | 统计/图表/徽章，README 直接引用 | README、外部报表 |
 
@@ -110,6 +110,6 @@ data/
 ## 5. 新鲜度
 
 - 每份工件都有生产时间：`output/stats.json` 的 `ts`、`quality/quality_meta.json` 的 `ts`。
-- 图表/徽章由 `stats.yml` 与 `quality-check.yml` 定时重建；README 引用的图表直链
+- 旧版图表、CN、good/premium 与 PCB 相关工件仍可能存在于历史快照，但不再由当前 workflow 重建
   `raw.githubusercontent.com` 即时反映最新提交（2026-09-16 起已替换 jsDelivr 缓存源）。
 - `countries/` 与根 `all.txt` 强制 1:1（回归测试 `test_sum_equals_all_txt`）。

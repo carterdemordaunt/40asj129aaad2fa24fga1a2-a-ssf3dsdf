@@ -1,13 +1,12 @@
 # proxyip
 
-定期从 <https://zip.cm.edu.kg> 下载代理 IP 列表并通过 CI 自动解压、整理、验证、提交回仓库；附带一个浏览器指纹生成工具。整个流程零第三方 Python 依赖，仅需标准库。
+定期从 <https://zip.cm.edu.kg> 下载代理 IP 列表并通过 CI 自动解压、整理、验证、提交回仓库；当前自动发布只维护 GitHub Runner 实测的欧洲清单。整个流程零第三方 Python 依赖，仅需标准库。
 
 [![Unique Proxies](https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/Xiaobei09/proxyip/main/data/output/stats.json&query=unique&label=Unique%20Proxies&color=blue)](https://raw.githubusercontent.com/Xiaobei09/proxyip/main/data/download/all.txt)
 [![Alive](https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/Xiaobei09/proxyip/main/data/output/stats.json&query=alive&label=Alive&color=green)](https://raw.githubusercontent.com/Xiaobei09/proxyip/main/data/valid/all.txt)
 [![Alive Rate](https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/Xiaobei09/proxyip/main/data/output/stats.json&query=alive_rate&label=Alive%20Rate&color=orange)](https://raw.githubusercontent.com/Xiaobei09/proxyip/main/data/valid/meta.json)
 [![Updated](https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/Xiaobei09/proxyip/main/data/output/stats.json&query=updated_ago&label=Updated&color=informational)](https://raw.githubusercontent.com/Xiaobei09/proxyip/main/data/output/stats.json)
 [![Status](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Xiaobei09/proxyip/main/data/output/badge.json)](https://raw.githubusercontent.com/Xiaobei09/proxyip/main/data/output/stats.json)
-[![CN Reachable](https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/Xiaobei09/proxyip/main/data/output/stats.json&query=cn_reachable&label=CN%20Reachable&color=red)](https://raw.githubusercontent.com/Xiaobei09/proxyip/main/data/valid/all_cn.txt)
 
 ![Trend](https://raw.githubusercontent.com/Xiaobei09/proxyip/main/data/output/chart_combo.svg)
 <details>
@@ -28,13 +27,6 @@
 
 </details>
 <details>
-<summary>🇨🇳 大陆连通（点击展开 2 图）</summary>
-
-![Mainland China reachability](https://raw.githubusercontent.com/Xiaobei09/proxyip/main/data/output/chart_cn.svg)
-![CN reachability 7-day trend](https://raw.githubusercontent.com/Xiaobei09/proxyip/main/data/output/chart_cn_7d.svg)
-
-</details>
-<details>
 <summary>🔍 出口与质量（点击展开 7 图）</summary>
 
 ![Exit IP family](https://raw.githubusercontent.com/Xiaobei09/proxyip/main/data/output/chart_family.svg)
@@ -51,19 +43,11 @@
 
 - **自动抓取整理**：下载上游 `all.json`（失败自动回退 zip）→ 按端口/国家/常用集合/全量多维度汇总，去重合并；并把上游真实出口 IP、ASN、地理等元数据落盘为 `data/quality/upstream_meta.json` 供下游消费
 - **可用性验证**：TLS 握手检测，asyncio 高并发测活，并在判活连接内做**稳态下载测速**（丢弃慢启动爬坡、仅对稳态窗口计时，MB/s）；非限量输出**按延迟升序**，**`_ltd` 限量清单按实测速度取每国最快**
-- **出口 IP 质量检测**（独立 CI）：对全量存活池做出口地理与类型（机房/住宅/移动）、双栈判定与可选滥用分，结果以 `-` 段追加到 `data/valid/*.txt`
-  - **滚动可用率**（`uptime.py`）：按轮记录存活日期，7d/30d 存活率写 `uptime.json` 并追加 `-U<NN>` 备注
-  - **结构化导出**：`data/valid/all.json` 与**出口多样性视图** `all_diverse.txt`（每实测出口/入口网段仅留综合分最高一条）
-  - **池健康看门狗**（`health_alert.py`）：池量暴跌/大陆可达崩塌/上游源覆盖骤降/数据过期 → webhook 告警
-  - （流媒体解锁检查已移除；历史行上的 NF/D+/YT 等标记仍被解析器容忍但不再产生新观测）
-- **大陆连通性检测**（独立 CI）：以大陆视角实测代理池是否可用，保守判定（多节点源单独或 ≥2 单节点源交叉确认才标 reachable，详见 `docs/logic.md`）+ 证据分级（`level`：http/tcp/icmp）+ 跨轮稳定计数（`streak`）
-  - 探源：批量通道 cn01（24 节点跨省采样 + cn02 大节点池降级补测）+ cn20-cn29 单节点 + cn40 多运营商复核（50+ 源全清单与配额见下方 CI 章节）
-  - 产出：`data/quality/china.json` 全量明细 + `data/valid/all_cn.txt` 全量清单及 `all_cn_http.txt`/`all_cn_stable.txt` 可靠性子集，`data/valid/*.txt` 追加 `-CN` 备注
-- **实际出口家族检测**（独立 CI）：探测每个存活代理的真实出口 IP 家族（IPv4/IPv6）——CF 边缘代理虽以 v4 地址呈现，实际出口常为 v6；按家族分离保存 `all_ipv4.txt` / `all_ipv6.txt`（双栈双入）并在 `data/valid/*.txt` 追加 `-V4`/`-V6`/`-DS` 备注（探测无结论 `unknown` 时清旧家族 token，不冒称）；同时对照上游 `data/quality/upstream_meta.json` 的真实出口 `clientIp` 交叉验证（`data/quality/exit_family.json` 记录 `upstream_match`）
+- **欧洲侧实测清单**（独立 CI）：从 GitHub 托管的 `ubuntu-latest` Runner 对候选逐条执行 TLS 握手和 HTTP GET，以已有测速 `≥5 MB/s` 过滤，并维护滚动稳定性。
 - **更新差异**：每次更新自动对比上一版，产出 `added`/`removed` 并归档
-- **统计与趋势**：生成 `data/output/stats.json`（供徽章消费）与零依赖 SVG 图表组：趋势、存活率、国家/端口分布、延迟/速度分布、更新增量、双轴复合图、集合规模、大陆可达性、出口家族与信誉分分布
+- **统计与趋势**：保留历史统计脚本与数据工件；当前节点筛选以 `data/valid/all_eu.txt` 和 `data/valid/all_eu_stable.txt` 为准
 - **结构化索引**：`valid/index.json` 提供每存活代理的延迟与检测方法索引，`valid/speed.json` 提供实测速度索引，便于程序直接消费
-- **CI 自动化**：每 2 小时定时触发下载→验证→统计→提交，无需人工干预；提交前自动跑测试套件（stdlib `unittest`）。注：GitHub 在同名工作流仍在运行时会跳过下一次定时命中，故实际刷新间隔约为一次完整运行的时长（当前通常 4~6 小时），以 `updated` 徽章为准。
+- **CI 自动化**：每 2 小时定时触发下载→验证→欧洲侧实测→提交，无需人工干预；提交前自动跑测试套件（stdlib `unittest`）。
 - **浏览器指纹生成**：生成内部自洽、同一设备配置的 UA/分辨率/时区/WebGL 等指纹
 
 ## 快速开始
@@ -82,11 +66,7 @@ cd proxyip
 python3 -m unittest discover -s tests -v    # 0. 运行测试套件（可选）
 python3 scripts/download_proxies.py          # 1. 下载解压整理
 python3 scripts/validate_proxies.py             # 2. 连通性验证与测速（默认不设时间限制，跑完为止；上一轮未存活条目先经 TCP 预筛除朽尸）
-python3 scripts/generate_stats.py            # 3. 统计与趋势图
-python3 scripts/quality_check.py             # 4. 出口 IP 质量检测（可选）
-python3 scripts/uptime.py                   # 5. 滚动可用率统计
-python3 scripts/export_json.py              # 6. 结构化 JSON 导出
-python3 scripts/health_alert.py             # 7. 池健康告警（可选 webhook）
+python3 scripts/europe_check.py             # 3. GitHub Runner 欧洲侧 TLS/HTTP 检查
 ```
 
 ### 消费数据
@@ -95,13 +75,8 @@ python3 scripts/health_alert.py             # 7. 池健康告警（可选 webhoo
 
 | 需求 | 首选文件 | 说明 |
 |---|---|---|
-| 大陆日常使用（最稳） | `data/valid/all_cn_stable.txt` | 连续 ≥2 轮大陆可达，抗误判/churn（不满足时不生成） |
-| 大陆 + 应用层确认 | `data/valid/all_cn_http.txt` | 过滤"TCP 通但被干扰"；无应用层证据时不生成 |
-| 大陆全量 | `data/valid/all_cn.txt` | 全可达集，按大陆实测延迟升序 |
 | 欧洲低延迟稳定使用 | `data/valid/all_eu_stable.txt` | GitHub 托管 runner 实测低延迟/速度候选；滚动合格率≥80% 且连续合格≥2轮 |
-| 综合最优 | `data/valid/all_good.txt` | CN 可达 + 信誉≥80 + 非高风险，CN 视图 |
-| 高端优质 | `data/valid/all_premium.txt` | CN 可达 + 信誉≥95 + 真实住宅 IP |
-| 按国家/集合取用 | `data/valid/countries/<CC>/cn4.txt` 等 | 各目录 `all/ltd/v4/46/cn/rep/good/premium` 多件套 |
+| 欧洲当前可达 | `data/valid/all_eu.txt` | 本轮 GitHub Runner TLS + HTTP 检查通过且已有测速达到门槛 |
 | 未验证全量 | `data/download/all.txt` | 去重清单，IP 数字序 |
 | 程序化消费 | `data/valid/all.json`、`speed.json`、`index.json` | 结构化导出 + 速度/延迟索引 |
 
@@ -133,43 +108,15 @@ data/valid/sets/hot/all.txt                 # 热门国家集合（验证后）
 data/download/all.txt                       # 全量去重清单（未验证）
 ```
 
-> **关于"不同国家速度差异大"**：日常轮中的 MB/s 是小文件短窗口采样，同一 CDN
-> 本地化边缘下同国趋同、跨国差异明显属正常现象；需要精确对比时以
-> `data/output/chart_country_speed.svg`（各国中位速度）和深测
-> （`scripts/deep_speed.py`，默认 20MB / 3 并发流 / `cdnjs` 目标，可选
-> `cf_speed`、`ovh` 多目标对照）为准——深测的意义是**在同一国家内拉开真实带宽差异**，
-> 而不是消除国家间线路差距（那是真实的主干网延迟/损耗，无法用节点选择抹平）。
+> 欧洲清单的 `5 MB/s` 条件使用验证阶段已有的测速结果；欧洲 Runner 的实时延迟只用于排序，
+> 不作为硬性淘汰条件。
 
-## 中国大陆使用建议
+## 欧洲清单使用
 
-- **优先消费**：`data/valid/all_cn_stable.txt`（连续 ≥2 轮大陆可达且历史判定翻转 ≤1，抗误判/churn）、
-  `data/valid/all_cn_http.txt`（应用层 HTTP 确认，过滤"TCP 通但被干扰"；**条件产物——当前无应用层证据时 `cn_http=0` 且不生成此文件，属预期**）、
-  `data/valid/all_cn.txt`（全量大陆可达，按**大陆实测延迟升序**）、
-  `data/valid/all_good.txt`（综合最优：CN 可达 + 信誉≥80 + 非高风险；延迟分优先采用大陆实测值）、
-  `data/valid/countries/<CC>/cn4.txt`（该国大陆可达且 IPv4 出口）
-- **可靠性叠加**：代理池 churn 快（检测时活着、使用时可能已死），且"TLS 握手存活"≠"能用"。
-  按家族分组清单（`v4`/`v6`/`46`/`cn`/`cn4`/`cn6`/`cn46`）派生两个可靠性维度
-  （如 `countries/US/cn4_stable.txt`、根级 `all_cn4_verified.txt`）；根级
-  `all_cn`/`all_ipv4`/`all_ipv6` 无此直接变体（`all_cn` 自带 http/stable 子集）：
-  - `*_verified` — **全链路验证**：本轮测速成功 = TLS + HTTP 2xx + 真实下载全部通过，
-    过滤"能握手但不吐数据"的半死代理
-  - `*_stable` — **连续两轮存活**：上一轮与本轮存活的交集，对抗快速 churn
-  - **跨家族联动**：`ltd`/`rep`/`good` 家族同样派生（如 `all_ltd_verified.txt`、
-    `all_cn46_rep_ltd_verified.txt`、`all_good_stable.txt`）；质量侧 `_stable` =
-    连续两轮大陆可达（china.json streak≥2 且翻转 ≤1）
-- **行内备注速查**（`data/valid/*.txt` 行尾 token）：
-
-  | token | 含义 |
-  |---|---|
-  | `-CN` | 大陆可达 |
-  | `-CNH` | 大陆可达且应用层（HTTP）确认（蕴含 `-CN`） |
-  | `-V4` / `-V6` / `-DS` | 实际出口家族（CF 边缘代理入口是 v4，实际出口常为 v6） |
-  | `→CC` | 实测出口地区（如 `→US`） |
-  | `-U<NN>` | 7 天滚动存活率（如 `-U35`） |
-  | `-RES` / `-DC` / `-MOB` / `-PROXY` | IP 类型：住宅/机房/移动/匿名 |
-  | `-fast` / `-mid` / `-slow` | 速度档（≥5 / 1–5 / <1 MB/s） |
-- **本地运行**：脚本访问 `raw.githubusercontent.com` 失败时自动回退 gh-proxy.com /
-  jsDelivr / gitmirror 镜像，大陆网络无需自备代理即可拉取源与黑名单
+- `data/valid/all_eu.txt`：本轮从 GitHub Runner 完成 TLS + HTTP 实测，且已有测速达到 `5 MB/s`。
+- `data/valid/all_eu_stable.txt`：滚动历史中至少 3 次采样、合格率至少 80%、连续合格至少 2 轮。
+- 延迟只用于排序，不设置 TLS 延迟硬阈值；全轮成功率异常过低时保留上一轮结果，避免网络故障清空订阅。
+- CN、good、premium 和 PCB 相关文件仅作为历史数据/代码保留，不再由自动 workflow 维护。
 
 ## 文档
 
@@ -183,104 +130,24 @@ data/download/all.txt                       # 全量去重清单（未验证）
 
 ## CI 自动更新
 
-<details>
-<summary><code>update-proxies.yml</code> — 每 2 小时下载 → 验证 → 统计 → 提交</summary>
+当前自动生产链只有两条：
 
-- **触发**：每 2 小时定时（`cron: 0 */2 * * *`，同名运行进行时下一次命中会被 GitHub 跳过，实际间隔以 `updated` 徽章为准）；支持 `workflow_dispatch` 手动触发
-- **流程**：跑测试（`unittest`）→ 下载整理（上游 `all.json`，失败回退 zip；另并 12 个第三方 CF 反代 / 免费 `ip:port` 补充源，完整清单见 `docs/scripts.md`「CF 反代补充来源」；产出 `data/quality/upstream_meta.json`）→ 验证与测速（`--time-budget 3600`，上一轮未存活的条目先经 2 秒 TCP 预连通筛除朽尸）→ 有变更则自动提交并推送回仓库
-- **细节**：作业超时 120 分钟；`concurrency` 组防重入；`contents: write` 权限；以 `github-actions[bot]` 身份提交
-- **徽章**：六个徽章分别取 `data/output/stats.json` 的 `unique`、`alive`、`alive_rate`、`updated_ago`、`cn_reachable`；`data/output/badge.json` 驱动状态徽章——正常时按数据年龄显示 fresh/stale（超过 3 小时变红），看门狗触发告警时直接替换为告警名（如 `stale data`、`valid-lists stale`）并标红，停机原因对访客可见
+- `.github/workflows/update-proxies.yml`：每 2 小时下载并验证上游代理，包含补充来源抓取，生成 `data/valid/all_ltd_verified.txt` 等候选文件。
+- `.github/workflows/europe-check.yml`：在 GitHub 托管的 `ubuntu-latest` Runner 上执行 TLS 握手和 HTTP GET，过滤已有测速低于 `5 MB/s` 的节点，维护 `all_eu.txt` 与 `all_eu_stable.txt`。
 
-</details>
+欧洲检查的稳定条件是至少 3 次采样、滚动合格率至少 80%、连续合格至少 2 轮。延迟只用于排序，没有 TLS 延迟硬阈值；当整轮成功率异常低时，脚本保留上一轮历史和清单，避免 Runner 网络故障清空订阅。
 
-<details>
-<summary><code>quality-check.yml</code> — 出口质量检测（独立 CI）</summary>
-
-- **触发**：每次 `Update proxy list` 完成后自动触发（`workflow_run`）；支持 `workflow_dispatch` 手动触发
-- **流程**：跑测试（`unittest`）→ `quality_check.py`（`--source data/valid/all.txt` 全量存活池；`--time-budget 5400` 兜底；信誉信号按 IP 缓存 7 天，见上文信誉缓存）→ `uptime.py`（滚动可用率）→ `reorg_country.py`（按出口国家重组 country/set/port 文件，改写 `#CC`）→ `annotate_classify.py`（填充缺失后缀 + 追加分类 token）→ 之后由专职 build-good 工作流重建 good 清单（含 `_uptime` 可靠性变体）→ stats 工作流统一渲染图表并执行 `export_json.py` + `health_alert.py`（stats 另有每 2 小时独立心跳，确保任一数据链持续失败时看门狗仍能发出 stale/塌方告警）→ 有变更则自动提交并推送
-- **细节**：作业超时 120 分钟；`concurrency` 组防重入；`contents: write` 权限；滥用分 key 经 secrets 注入 `ABUSEIPDB_KEY`/`IPQS_KEY`（未配置自动跳过）
-- **信誉覆盖保护**：公开质量链不再加载不存在的 PCB 信誉插件；`reputation.json` 直接纳入出口 IP 的公开 `ip-api` 信号与公开静态黑名单。`build_good.py` 在信誉覆盖低于全池 25% 时拒绝改写，避免上游故障再次删除全部 good 文件
-- **说明**：主更新按前文调度节奏（`cron: 0 */2 * * *`；同名运行进行时下一次命中被跳过，实测约 4~6 小时一次）重写 `data/valid/*.txt`，但会保留旧行已有备注（流媒体/出口/信誉/`-CN`），故质量/大陆连通性标注可跨重生成存续；仅新增存活行在下次质量/连通性 CI 前暂缺备注，属独立 CI 固有节奏
-
-</details>
-
-<details>
-<summary><code>china-check.yml</code> — 大陆连通性检测（独立 CI）</summary>
-
-- **触发**：每小时定时（`cron: 11 * * * *`）+ `workflow_dispatch` 手动触发（原 workflow_run 依赖已移除，独立于质量链节奏）。GitHub 调度偶发连续跳 tick（实测）时以 `workflow_dispatch` 手动补跑为准，streak 6h 容差覆盖短缺口
-- **流程**：跑测试（`unittest`）→ `china_check.py`（对 `data/valid/all.txt` 全量池，`--limit 0`，全免费 CN 验证源分层判定：cn01 批量 + cn02 大节点池降级 + cn03 ICMP 兜底（CN-26）、cn27 呼和浩特 TCP（fail 追加同节点 ICMP 消歧，ok 且孤证追加 HTTPS 应用层确认）/cn20（北京 TCP）＋cn21（枣庄 ICMP）＋cn22（状态码）＋cn23（443 扫描）/cn24 TCP（附电信 isp_ms）+cn25 ICMP+cn26 TLS 三协议单节点（双镜像 failover），多源复核集：cn30（800 键/20 并发）＋cn31（400 键/20 并发，同站 ICMP）＋cn32（200 键/8 并发，同站应用层）＋cn33（200 键/6 并发，同站路由追踪）、cn07（1200/40）、cn08（600/12）、cn14（500/8）、cn15（200 键/8 并发，同站 ICMP）、cn17（400 键/8 并发，ALTCHA 会话复用）＋cn18（200 键/6 并发，同通道 ICMP）＋cn19（200 键/6 并发，同站 MTR 末跳见证）、cn16（200/8）、cn11（200 键/6 并发，34 大陆省运营商节点 TCPing）＋cn12（200 键/6 并发，同站 ICMP）、cn09（200 键/8 并发，约 39 ISP×节点 TCPing 测量单元）＋cn10（200 键/8 并发，同站 ICMP）、cn04（200 键/6 并发）＋cn05（200 键/6 并发，仅 443 键）、cn06（200 键/6 并发）＋cn34（100 键/8 并发，约 287 节点 TCPing）＋cn35（100 键/8 并发，同站路由追踪）、cn36（60 键/4 并发，北京探针 ICMP，匿名配额）＋cn37（40 键/4 并发，同站路由追踪末跳见证）＋cn38（40 键/4 并发，同站应用层状态码）＋cn39（40 键/4 并发，同站 MTR 末跳见证）、cn40（300 键/6 并发，约 13 大陆节点多数可达））→ `annotate_classify.py`（填充缺失后缀 + 追加分类 token）→ 有变更则自动提交并推送；完成后再由专职 build-good 与 stats 工作流重建 good 清单/图表（含 CN 数据）
-- **细节**：作业超时 360 分钟；`concurrency` 组防重入；`contents: write` 权限；cn27 key 与 cn41 复核 token 经 secrets 注入 `CHINA_CHECK_API_KEY`/`TCPPING_CN_TOKEN`（未配置自动跳过/降级）
-- **说明**：各工作流提交经 `.github/scripts/commit_data.sh`——只提交本 job
-  实际写入的文件（mtime 标记），push 冲突时其余文件对齐 origin，
-   杜绝旧 checkout 快照回滚他人并发更新；china.json 另有 `last_ok_ts`
-   时间窗（≤6h，`STREAK_GAP_TOLERANCE_S`）保护 streak 连续计数不被陈旧基线清零
-
-</details>
-
-<details>
-<summary><code>europe-check.yml</code> — GitHub runner 稳定清单</summary>
-
-- **运行位置**：GitHub 托管的 `ubuntu-latest` runner；公共 runner 地理位置不固定，延迟数据只用于排序，不作为硬性淘汰条件
-- **流程**：从 `all_ltd_verified.txt` 取每国优选候选 → 在 GitHub runner 逐条执行 TLS 握手 + HTTP GET → 过滤已有测速 ≥5MB/s → 维护 `data/quality/europe.json` 的 12 轮滚动历史 → 输出 `all_eu.txt` 与 `all_eu_stable.txt`
-- **稳定口径**：默认至少 3 个合格样本、滚动合格率 ≥80%、当前连续合格 ≥2 轮；全轮基础可达率低于 5% 时视为 runner 网络/SNI 故障，不污染历史也不清空旧订阅
-- **触发方式**：`Update proxy list` 成功完成后自动运行，也支持 `workflow_dispatch` 手动运行
-
-</details>
-
-<details>
-<summary><code>exit-family.yml</code> — 实际出口家族分离（独立 CI）</summary>
-
-- **触发**：每次 `Quality check` 完成后自动触发（`workflow_run`）；支持 `workflow_dispatch` 手动触发
-- **流程**：跑测试（`unittest`）→ `exit_family.py`（全量存活池按家族分离，并对照 `data/quality/upstream_meta.json` 交叉验证）→ `annotate_classify.py` → `build_good.py`（重建综合最优 good 清单）→ 有变更则自动提交并推送
-- **细节**：作业超时 60 分钟；`concurrency` 组防重入；`contents: write` 权限；无第三方依赖、无密钥
-- **说明**：CF 边缘代理真实出口常为 IPv6（尽管呈现为 v4 地址），分离清单供按家族选路使用；上游交叉验证仅作参照，实时探测仍是判定依据
-
-</details>
-
-<details>
-<summary><code>annotate-classify.yml</code> — 后缀填充 + 节点分类</summary>
-
-- **触发**：quality-check 完成后自动触发（`workflow_run`）；支持 `workflow_dispatch` 手动触发
-- **流程**：跑测试（`unittest`）→ `annotate_classify.py`（读取 7 个 JSON 数据源：ipinfo/reputation/china/exit_family/external_check/upstream_meta/uptime，填充缺失后缀 + 追加分类 token）→ `build_good.py`（重建综合最优 good 清单）→ 有变更则自动提交并推送
-- **细节**：作业超时 30 分钟；`concurrency` 组防重入；`contents: write` 权限；无第三方依赖、无密钥
-- **说明**：分类维度：IP 类型（DC/RES/MOB/PROXY，来自 ipinfo.json）+ 速度等级（fast≥5MB/s / mid 1-5 / slow<1，来自行内 speed 解析）。行格式：`...-DC-fast`
-
-</details>
+CN、quality、good/premium、出口家族、分类和深测 workflow 已停用，因此不会再触发 reputation/PCB fallback。对应脚本和历史数据暂保留，供历史数据读取与测试使用，但不再是当前发布链的一部分。
 
 ## 目录结构
 
 ```
-.github/workflows/update-proxies.yml     CI 自动更新（下载、验证、统计）
-.github/workflows/quality-check.yml      独立 CI：出口 IP 质量检测 + 滚动可用率
-.github/workflows/china-check.yml        独立 CI：大陆连通性检测
-.github/workflows/exit-family.yml        独立 CI：实际出口 IPv4/IPv6 分离
-.github/workflows/annotate-classify.yml  独立 CI：后缀填充 + 节点分类
-.github/workflows/build-good.yml         独立 CI：重建综合最优 good 清单 + tiers
-.github/workflows/deep-speed.yml         独立 CI：深测带宽写回信誉
-.github/workflows/stats.yml              独立 CI：统计渲染 + 数据链看门狗
+.github/workflows/update-proxies.yml     CI 自动更新（下载、验证、提交）
 scripts/download_proxies.py              下载与解压整理
 scripts/validate_proxies.py              可用性验证与测速
 scripts/generate_stats.py                统计与趋势图
-scripts/quality_check.py                 出口 IP 质量检测（入口）
-scripts/quality_probe.py                 TLS 探测引擎（TLS GET / 外部出口地理 / ip-api 批量）
-scripts/quality_reputation.py            信誉分/滥用分模块（quality_check 拆分）
-scripts/uptime.py                        滚动节点可用率（node_seen.json → uptime.json）
-scripts/export_json.py                   结构化 all.json 导出
-scripts/health_alert.py                  池健康看门狗（webhook 告警）
-scripts/reorg_country.py                 按出口国家重组 country/set/port 文件
-scripts/china_check.py                   大陆连通性检测（50+ 验证源分层判定：TCP/HTTP/ICMP/MTR/路由追踪，配额与毕业源见上 CI 章节）
-scripts/china_engine.py                  判定引擎（merge_verdict + 阈值表，零站点细节，源身份代号化）
-scripts/ws_transport.py                  通用 WebSocket 传输层（握手/掩码/帧重组，零站点细节）
-scripts/checks_bundle.py                 私有检查包加载器（PCB 插件发现 + 接口版本校验，无包 fail-open）
-scripts/exit_family.py                   实际出口 IP 家族检测与分离（TLS trace 回显）
-scripts/generate_fingerprint.py          浏览器指纹生成
-scripts/annotate_classify.py             后缀填充 + 节点分类（CI 自动运行）
-scripts/analyze_sources.py               下载源质量分析（历史数据）
-scripts/audit_entry_cc.py                入站国家标签准确性审计
-scripts/build_good.py                    综合最优 good 清单构建（CI 自动运行）
-scripts/build_premium.py                 premium 高端优质清单构建（CI 自动运行）
+scripts/europe_check.py                  欧洲侧 TLS/HTTP 检查与滚动稳定性
 scripts/common.py                        共享常量与助手（data 布局、HTTP/JSON 探测）
-scripts/deep_speed.py                    深测大文件多流多 CDN 测速
 
 data/download/                           下载产出（原始代理列表）
 data/download/all.txt                    全量去重 ip:port#国家（IP 数字序；同一 ip:port 多国标签可并存）
