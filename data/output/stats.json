@@ -1,9 +1,9 @@
 {
-  "ts": "2026-09-25T01:30:06Z",
+  "ts": "2026-09-25T02:28:07Z",
   "updated_at": "2026-09-24T22:50:41Z",
-  "age_s": 9565.29188489914,
-  "updated_ago": "2h 39m ago",
-  "stale": false,
+  "age_s": 13045.586993932724,
+  "updated_ago": "3h 37m ago",
+  "stale": true,
   "unique": 20369,
   "total": 20389,
   "countries": 81,
