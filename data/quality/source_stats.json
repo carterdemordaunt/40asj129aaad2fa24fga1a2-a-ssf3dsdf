@@ -26,9 +26,9 @@
       "unique": 147
     },
     "main (zip.cm.edu.kg)": {
-      "overlap": 2473,
+      "overlap": 2316,
       "total": 12403,
-      "unique": 9930
+      "unique": 10087
     },
     "proxyip": {
       "overlap": 0,
@@ -36,24 +36,24 @@
       "unique": 251
     },
     "svip_cfip": {
-      "overlap": 429,
-      "total": 429,
+      "overlap": 415,
+      "total": 415,
       "unique": 0
     },
     "wangallen": {
       "overlap": 24,
-      "total": 25,
-      "unique": 1
+      "total": 24,
+      "unique": 0
     },
     "wanwu": {
-      "overlap": 1038,
-      "total": 1054,
-      "unique": 16
+      "overlap": 948,
+      "total": 975,
+      "unique": 27
     },
     "wentao": {
-      "overlap": 164,
-      "total": 175,
-      "unique": 11
+      "overlap": 43,
+      "total": 44,
+      "unique": 1
     },
     "wwuyi": {
       "overlap": 336,
