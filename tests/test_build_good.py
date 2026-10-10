@@ -13,6 +13,22 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import build_good as bg
 
 
+def healthy_map(text: str, *, median_speed_mbps: float = 8.0) -> dict[str, dict]:
+    state = {
+        "samples": [1] * 6,
+        "speed_sample_count": 6,
+        "success_pct": 100,
+        "streak": 6,
+        "median_speed_mbps": median_speed_mbps,
+        "speed_spread_pct": 0.1,
+    }
+    return {
+        key: dict(state)
+        for line in text.splitlines()
+        if (key := bg.line_to_key(line))
+    }
+
+
 class TestParseMetrics(unittest.TestCase):
     def test_latency_and_speed(self):
         ms, mbps = bg.parse_metrics("1.2.3.4:443#US-130ms-1.86MB/s-CF-99")
@@ -52,8 +68,8 @@ class TestScores(unittest.TestCase):
     def test_speed_score(self):
         self.assertEqual(bg.speed_score(None), 0.0)
         self.assertEqual(bg.speed_score(0.0), 0.0)
-        self.assertAlmostEqual(bg.speed_score(2.5), 50.0)
-        self.assertEqual(bg.speed_score(5.0), 100.0)
+        self.assertEqual(bg.speed_score(2.0), 100.0)
+        self.assertEqual(bg.speed_score(1.0), 50.0)
         self.assertEqual(bg.speed_score(33.0), 100.0)
 
     def test_composite_reputation_weighted(self):
@@ -217,10 +233,10 @@ class TestFilterRank(unittest.TestCase):
     def test_filters_and_orders(self):
         out = bg.filter_rank(self.LINES, self.china, self.rep)
         # 1.1.1.1: 0.6*90+0.2*100+0.2*100=94; 9.9.9.9: 54+20+8=82;
-        # 2.2.2.2 dropped (rep 40 < 80); JP dropped (no CN); SG dropped (high)
+        # Reputation and CN reachability are informational only; all lines pass.
         self.assertEqual(
             [l.split("#")[0] for l in out],
-            ["1.1.1.1:443", "9.9.9.9:443"],
+            ["5.5.5.5:443", "1.1.1.1:443", "3.3.3.3:443", "9.9.9.9:443", "2.2.2.2:443"],
         )
 
     def test_rep_score_threshold_boundary(self):
@@ -234,12 +250,12 @@ class TestFilterRank(unittest.TestCase):
             "8.0.0.2:443#US": {"score": 79, "risk": "low"},
         }
         out = bg.filter_rank(lines, china, rep)
-        self.assertEqual([l.split(":")[0] for l in out], ["8.0.0.1"])
+        self.assertEqual([l.split(":")[0] for l in out], ["8.0.0.1", "8.0.0.2"])
 
         strict = bg.filter_rank(
             lines, china, rep, min_rep_score=bg.HEALTHY_GOOD_MIN_REP_SCORE
         )
-        self.assertEqual(strict, [])
+        self.assertEqual(len(strict), 2)
 
     def test_health_gate_requires_mature_fast_stable_history(self):
         line = "8.0.0.1:443#US-100ms-8.00MB/s-CN-90"
@@ -261,10 +277,8 @@ class TestFilterRank(unittest.TestCase):
         self.assertEqual(
             bg.filter_rank(line, china, rep, health_map={key: unstable}), []
         )
-        slow = {**healthy, "median_speed_mbps": 4.99}
-        self.assertEqual(
-            bg.filter_rank(line, china, rep, health_map={key: slow}), []
-        )
+        slow = {**healthy, "median_speed_mbps": 1.99}
+        self.assertEqual(bg.filter_rank(line, china, rep, health_map={key: slow}), [])
         missing_speed_history = {**healthy, "speed_sample_count": 1}
         self.assertEqual(
             bg.filter_rank(
@@ -301,7 +315,7 @@ class TestFilterRank(unittest.TestCase):
             min_rep_score=bg.HEALTHY_GOOD_MIN_REP_SCORE,
         )
 
-        self.assertEqual([bg.line_to_key(line) for line in out], [keys[0]])
+        self.assertEqual(set(bg.line_to_key(line) for line in out), set(keys))
 
     def test_health_history_rejects_stale_or_missing_timestamp(self):
         now = datetime(2026, 10, 9, 12, tzinfo=timezone.utc)
@@ -326,10 +340,10 @@ class TestFilterRank(unittest.TestCase):
 
     def test_historical_cn_token_rejected(self):
         lines = "7.7.7.7:443#DE-120ms-3.00MB/s-CN-V6-88\n"
-        # key absent from current china verdicts：即使行带 -CN 也被拒（新策略）
+        # CN reachability is no longer a good-list requirement.
         out = bg.filter_rank(lines, set(),
                              {"7.7.7.7:443#DE": {"score": 88, "risk": "low"}})
-        self.assertEqual(len(out), 0)
+        self.assertEqual(len(out), 1)
 
     def test_lines_kept_verbatim(self):
         line = "1.1.1.1:443#🇺🇸US-100ms-5.00MB/s-CN-V6-GPT-90"
@@ -340,7 +354,7 @@ class TestFilterRank(unittest.TestCase):
     def test_empty_inputs(self):
         self.assertEqual(bg.filter_rank("", set(), {}), [])
 
-    def test_cn_ms_overrides_inline_latency(self):
+    def test_europe_metrics_are_kept_for_ranking(self):
         lines = (
             "1.0.0.1:443#US-50ms-5.00MB/s-CN-90\n"    # 海外快，大陆慢
             "2.0.0.2:443#US-900ms-5.00MB/s-CN-90\n"   # 海外慢，大陆快
@@ -353,10 +367,10 @@ class TestFilterRank(unittest.TestCase):
         # 无 cn_ms：按行内海外延迟排序，1.0.0.1 在前
         out = bg.filter_rank(lines, china, rep)
         self.assertEqual([l.split(":")[0] for l in out], ["1.0.0.1", "2.0.0.2"])
-        # 有 cn_ms：大陆实测延迟参与评分，2.0.0.2 反超
+        # CN measurements are ignored; Europe inline latency remains authoritative.
         cn_ms = {"1.0.0.1:443#US": 800.0, "2.0.0.2:443#US": 60.0}
         out = bg.filter_rank(lines, china, rep, cn_ms)
-        self.assertEqual([l.split(":")[0] for l in out], ["2.0.0.2", "1.0.0.1"])
+        self.assertEqual([l.split(":")[0] for l in out], ["1.0.0.1", "2.0.0.2"])
 
 
 class TestWriteGoodFiles(unittest.TestCase):
@@ -383,15 +397,17 @@ class TestWriteGoodFiles(unittest.TestCase):
             (valid / "sets" / "hot" / "all.txt").write_text(
                 self.POOL, encoding="utf-8")
 
-            stats = bg.write_good_files(valid, self.CHINA, self.REP)
-            self.assertEqual(stats["all_good"], 2)
-            self.assertEqual(stats["countries/US"], 2)
-            self.assertEqual(stats["sets/hot"], 2)
+            stats = bg.write_good_files(
+                valid, self.CHINA, self.REP, health_map=healthy_map(self.POOL)
+            )
+            self.assertEqual(stats["all_good"], 3)
+            self.assertEqual(stats["countries/US"], 3)
+            self.assertEqual(stats["sets/hot"], 3)
             self.assertNotIn("countries/XX", stats)
 
             good = (valid / "all_good.txt").read_text(encoding="utf-8")
-            self.assertEqual(good.splitlines()[0].split("#")[0], "1.1.1.1:443")
-            self.assertEqual(len(good.splitlines()), 2)
+            self.assertEqual(good.splitlines()[0].split("#")[0], "5.5.5.5:443")
+            self.assertEqual(len(good.splitlines()), 3)
             self.assertTrue((valid / "countries" / "US" / "good.txt").exists())
             self.assertTrue((valid / "sets" / "hot" / "good.txt").exists())
 
@@ -412,17 +428,18 @@ class TestWriteGoodFiles(unittest.TestCase):
             (valid / "sets" / "hot" / "ltd.txt").write_text(
                 ltd_pool, encoding="utf-8")
 
-            stats = bg.write_good_files(valid, self.CHINA, self.REP)
-            self.assertEqual(stats["all_good_ltd"], 1)
-            self.assertEqual(stats["countries/US_ltd"], 1)
-            self.assertEqual(stats["sets/hot_ltd"], 1)
+            stats = bg.write_good_files(
+                valid, self.CHINA, self.REP, health_map=healthy_map(ltd_pool)
+            )
+            self.assertEqual(stats["all_good_ltd"], 3)
+            self.assertEqual(stats["countries/US_ltd"], 3)
+            self.assertEqual(stats["sets/hot_ltd"], 3)
             self.assertNotIn("countries/XX", stats)
 
             for rel in ("all_good_ltd.txt", "countries/US/good_ltd.txt",
                         "sets/hot/good_ltd.txt"):
                 body = (valid / rel).read_text(encoding="utf-8")
-                self.assertEqual(
-                    [l.split("#")[0] for l in body.splitlines()], ["1.1.1.1:443"])
+                self.assertEqual(len(body.splitlines()), 3)
 
     def test_good_ltd_stale_files_cleaned(self):
         """good_ltd 全部清空时清理上轮残留（基清单及其变体）。"""
@@ -436,11 +453,18 @@ class TestWriteGoodFiles(unittest.TestCase):
             bg.write_good_files(valid, set(), {})
             self.assertFalse((valid / "all_good_ltd.txt").exists())
 
-            # 有 ltd 池但池内无可达行 -> 基清单清空不落盘
+            # 有 ltd 池时无需 CN 可达条件。
             (valid / "all_ltd.txt").write_text(
                 "5.5.5.5:443#JP-60ms-9.00MB/s-95\n", encoding="utf-8")
-            bg.write_good_files(valid, self.CHINA, self.REP)
-            self.assertFalse((valid / "all_good_ltd.txt").exists())
+            bg.write_good_files(
+                valid,
+                self.CHINA,
+                self.REP,
+                health_map=healthy_map(
+                    "5.5.5.5:443#JP-60ms-9.00MB/s-95\n"
+                ),
+            )
+            self.assertTrue((valid / "all_good_ltd.txt").exists())
 
     def test_verified_stable_variants(self):
         import common
@@ -470,7 +494,12 @@ class TestWriteGoodFiles(unittest.TestCase):
                     ),
                     encoding="utf-8",
                 )
-                bg.write_good_files(valid, self.CHINA, self.REP)
+                bg.write_good_files(
+                    valid,
+                    self.CHINA,
+                    self.REP,
+                    health_map=healthy_map(self.POOL),
+                )
             finally:
                 common.SPEED_FILE, common.CHINA_FILE = orig
 
@@ -501,7 +530,9 @@ class TestWriteGoodFiles(unittest.TestCase):
             (valid / "countries" / "US" / "all.txt").write_text(pool, encoding="utf-8")
             (valid / "sets" / "hot" / "all.txt").write_text(pool, encoding="utf-8")
 
-            stats = bg.write_good_files(valid, china, rep)
+            stats = bg.write_good_files(
+                valid, china, rep, health_map=healthy_map(pool)
+            )
 
             # 扁平变体：按档位 token 分桶
             fast = (valid / "all_good_fast.txt").read_text(encoding="utf-8")
@@ -529,13 +560,21 @@ class TestWriteGoodFiles(unittest.TestCase):
             valid = Path(tmp) / "valid"
             valid.mkdir(parents=True)
             (valid / "all.txt").write_text(pool_fast, encoding="utf-8")
-            bg.write_good_files(valid, {"1.1.1.1:443#US"},
-                                {"1.1.1.1:443#US": {"score": 90, "risk": "low"}})
+            bg.write_good_files(
+                valid,
+                {"1.1.1.1:443#US"},
+                {"1.1.1.1:443#US": {"score": 90, "risk": "low"}},
+                health_map=healthy_map(pool_fast),
+            )
             stale = valid / "tiers" / "slow" / "all.txt"
             stale.parent.mkdir(parents=True)
             stale.write_text("9.9.9.9:80#US\n", encoding="utf-8")
-            bg.write_good_files(valid, {"1.1.1.1:443#US"},
-                                {"1.1.1.1:443#US": {"score": 90, "risk": "low"}})
+            bg.write_good_files(
+                valid,
+                {"1.1.1.1:443#US"},
+                {"1.1.1.1:443#US": {"score": 90, "risk": "low"}},
+                health_map=healthy_map(pool_fast),
+            )
             self.assertFalse(stale.exists())
 
     def test_note_tier_helper(self):
@@ -543,8 +582,8 @@ class TestWriteGoodFiles(unittest.TestCase):
         self.assertEqual(common.note_tier("1.1.1.1:80#US-x-fast"), "fast")
         self.assertIsNone(common.note_tier("1.1.1.1:80#US-x"))
 
-    def test_cn_view_applied_to_all_good_outputs(self):
-        """good 全部输出（全局/国家/集合）都是仅含 CN 行的列表 → 统一 CN 视图。"""
+    def test_europe_view_applied_to_all_good_outputs(self):
+        """good 输出保留欧洲实测延迟和速度，不依赖 CN 快照。"""
         pool = (
             "1.1.1.1:443#US-100ms-5.00MB/s-CN-fast-90\n"
             "2.2.2.2:443#US-400ms-1.00MB/s-CN-slow-85\n"
@@ -560,23 +599,28 @@ class TestWriteGoodFiles(unittest.TestCase):
             (valid / "countries" / "US" / "all.txt").write_text(pool, encoding="utf-8")
             (valid / "sets" / "hot" / "all.txt").write_text(pool, encoding="utf-8")
 
-            bg.write_good_files(valid, china, rep, cn_ms=cn_ms)
+            bg.write_good_files(
+                valid,
+                china,
+                rep,
+                cn_ms=cn_ms,
+                health_map=healthy_map(pool),
+            )
 
             for rel in ("all_good.txt", "countries/US/good.txt",
                         "sets/hot/good.txt"):
                 body = (valid / rel).read_text(encoding="utf-8")
                 lines = body.splitlines()
-                self.assertIn("US-234ms-", lines[0])
-                self.assertIn("≈", lines[0])
-                self.assertIn("US-35ms-", lines[1])
-                self.assertIn("≈", lines[1])
-            # 派生变体同样 CN 视图
+                self.assertIn("US-100ms-", lines[0])
+                self.assertNotIn("≈", lines[0])
+                self.assertIn("US-400ms-", lines[1])
+                self.assertNotIn("≈", lines[1])
             fast = (valid / "all_good_fast.txt").read_text(encoding="utf-8")
-            self.assertIn("≈", fast)
+            self.assertNotIn("≈", fast)
             ver = (valid / "all_good_verified.txt")  # 无 speed.json 数据 → 不生成
             self.assertFalse(ver.exists())
 
-    def test_country_good_requires_europe_health_history(self):
+    def test_all_good_and_country_good_require_europe_health_history(self):
         lines = (
             "1.1.1.1:443#US-100ms-8.00MB/s-CN-fast-90\n"
             "2.2.2.2:443#US-120ms-8.00MB/s-CN-fast-90\n"
@@ -594,6 +638,7 @@ class TestWriteGoodFiles(unittest.TestCase):
             valid = Path(tmp) / "valid"
             country = valid / "countries" / "US"
             country.mkdir(parents=True)
+            (valid / "all.txt").write_text(lines, encoding="utf-8")
             (country / "all.txt").write_text(lines, encoding="utf-8")
 
             bg.write_good_files(
@@ -609,16 +654,23 @@ class TestWriteGoodFiles(unittest.TestCase):
             output = (country / "good.txt").read_text(encoding="utf-8")
             self.assertEqual(len(output.splitlines()), 1)
             self.assertTrue(output.startswith("1.1.1.1:443#US-"))
+            root_output = (valid / "all_good.txt").read_text(encoding="utf-8")
+            self.assertEqual(root_output, output)
+            self.assertEqual((valid / "all.txt").read_text(encoding="utf-8"), lines)
 
     def test_idempotent_rewrite(self):
         with tempfile.TemporaryDirectory() as tmp:
             valid = Path(tmp) / "valid"
             valid.mkdir(parents=True)
             (valid / "all.txt").write_text(self.POOL, encoding="utf-8")
-            bg.write_good_files(valid, self.CHINA, self.REP)
+            bg.write_good_files(
+                valid, self.CHINA, self.REP, health_map=healthy_map(self.POOL)
+            )
             first = (valid / "all_good.txt").read_bytes()
             mtime = (valid / "all_good.txt").stat().st_mtime_ns
-            bg.write_good_files(valid, self.CHINA, self.REP)
+            bg.write_good_files(
+                valid, self.CHINA, self.REP, health_map=healthy_map(self.POOL)
+            )
             self.assertEqual((valid / "all_good.txt").read_bytes(), first)
             self.assertEqual(
                 (valid / "all_good.txt").stat().st_mtime_ns, mtime)
@@ -746,10 +798,10 @@ class TestWriteGoodFiles(unittest.TestCase):
             rc = bg.main(["--data-dir", str(data_dir)])
 
             self.assertEqual(rc, 0)
-            self.assertEqual((valid / "all_good.txt").read_text(), line)
+            self.assertTrue((valid / "all_good.txt").exists())
             self.assertEqual((country / "good.txt").read_text(), line)
 
-    def test_main_keeps_legacy_all_good_and_clears_unverified_country_good(self):
+    def test_main_clears_all_good_and_country_good_without_europe_health(self):
         with tempfile.TemporaryDirectory() as tmp:
             data_dir = Path(tmp)
             valid = data_dir / "valid"
@@ -775,7 +827,7 @@ class TestWriteGoodFiles(unittest.TestCase):
             rc = bg.main(["--data-dir", str(data_dir)])
 
             self.assertEqual(rc, 0)
-            self.assertEqual((valid / "all_good.txt").read_text(), line)
+            self.assertFalse((valid / "all_good.txt").exists())
             self.assertFalse((country / "good.txt").exists())
 
     def test_main_recovers_deleted_outputs_from_inline_scores(self):
@@ -819,12 +871,11 @@ class TestWriteGoodFiles(unittest.TestCase):
 
 
 class TestCommittedCnViewInvariant(unittest.TestCase):
-    """数据合规护栏：仓库内所有 CN 视图文件不混入海外实测 ``-XMB/s``。
+    """数据护栏：good 输出保留欧洲实测速率，CN 专用清单仍保持 CN 视图。
 
-    覆盖四块 CN 视图表面（统一只允许 ``≈XMB/s`` 估算或无速度 token）：
+    覆盖 CN 专用清单表面（只允许 ``≈XMB/s`` 估算或无速度 token）：
 
-    - ``good/premium`` 家族（build_good/build_premium 及其全部变体）；
-    - ``data/valid/tiers/`` 镜像（good 家族同源 CN 视图副本）；
+    - ``premium`` 家族（build_premium 及其全部变体）；
     - ``all_cn*.txt``（china_check 的大陆清单）。
     - ``countries/*/cn*.txt`` 与 ``sets/*/cn*.txt``（R299 补入：此前
       仅前三块有锁，子目录 CN 视图同类泄漏将无声入库；实证零泄漏）。
@@ -843,13 +894,13 @@ class TestCommittedCnViewInvariant(unittest.TestCase):
             return []
         out = []
         for path in valid.rglob("*.txt"):
-            if path.name.startswith(("good", "premium")):
+            if path.name.startswith("premium"):
                 out.append(path)
                 continue
             # 根级 flatten 家族（all_good*.txt / all_premium*.txt）——以 good/
             # premium 前缀命名的判断抓不到它们，须显式纳入，否则护栏对
             # 主清单文件失联
-            if path.name.startswith(("all_good", "all_premium")):
+            if path.name.startswith("all_premium"):
                 out.append(path)
                 continue
             if path.name.startswith("all_cn"):
@@ -860,7 +911,7 @@ class TestCommittedCnViewInvariant(unittest.TestCase):
             if path.name.startswith("cn"):
                 out.append(path)
                 continue
-            if "tiers" in path.parts:
+            if "tiers" in path.parts and "premium" in path.name:
                 out.append(path)
         return out
 
@@ -879,7 +930,7 @@ class TestCommittedCnViewInvariant(unittest.TestCase):
         if offenders:
             first = offenders[0]
             self.fail(
-                f"CN 视图家族混入 {len(offenders)} 条海外实测速度（应为 ≈ 估算）："
+                f"CN 专用视图混入 {len(offenders)} 条海外实测速度（应为 ≈ 估算）："
                 f"{first[0]} {first[1][:80]}"
             )
         # 全家族非空（含关键基准文件），防止护栏失联

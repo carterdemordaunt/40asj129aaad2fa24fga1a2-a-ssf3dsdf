@@ -181,6 +181,32 @@ class TestEuropeCheck(unittest.TestCase):
         self.assertEqual(state["median_speed_mbps"], 8.0)
         self.assertEqual(state["speed_spread_pct"], 0.0)
 
+    def test_history_requalifies_retained_speeds_after_threshold_change(self):
+        previous = {
+            "ts": "2026-09-24T00:00:00Z",
+            "proxies": {
+                self.KEY: {
+                    "samples": [0, 0, 1],
+                    "speed_samples": [1.5, 3.0, 6.0],
+                    "latency_samples": [40.0, 40.0, 40.0],
+                    "streak": 1,
+                }
+            },
+        }
+        result = {
+            self.KEY: {
+                "ok": True, "qualified": True, "reachable": True,
+                "speed_mbps": 3.0, "ms": 40.0,
+            }
+        }
+        history = ec.update_history(
+            previous, result, window=12, now="2026-09-24T01:00:00Z"
+        )
+        state = history["proxies"][self.KEY]
+        self.assertEqual(state["samples"], [0, 1, 1, 1])
+        self.assertEqual(state["success_pct"], 75)
+        self.assertEqual(state["streak"], 3)
+
     def test_history_resets_after_long_collection_gap(self):
         previous = {
             "ts": "2026-09-24T00:00:00Z",

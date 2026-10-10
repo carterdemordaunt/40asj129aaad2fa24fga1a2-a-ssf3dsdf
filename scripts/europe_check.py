@@ -60,7 +60,7 @@ DEFAULT_HISTORY_MAX_GAP_HOURS = 12
 DEFAULT_MIN_SAMPLES = 3
 DEFAULT_MIN_SUCCESS_PCT = 80
 DEFAULT_MIN_STREAK = 2
-DEFAULT_MIN_SPEED_MBPS = 5.0
+DEFAULT_MIN_SPEED_MBPS = 2.0
 DEFAULT_QUALITY_MIN_SAMPLES = 6
 DEFAULT_QUALITY_MIN_SUCCESS_PCT = 90
 DEFAULT_QUALITY_MAX_SPEED_SPREAD = 0.5
@@ -274,6 +274,7 @@ def update_history(
     *,
     window: int,
     now: str,
+    min_speed_mbps: float = DEFAULT_MIN_SPEED_MBPS,
 ) -> dict:
     old = previous.get("proxies", {}) if isinstance(previous, dict) else {}
     previous_ts = previous.get("ts") if isinstance(previous, dict) else None
@@ -317,6 +318,15 @@ def update_history(
             float(x) if isinstance(x, (int, float)) and x > 0 else None
             for x in prior_latencies
         ][-keep:] if keep else []
+        # Re-evaluate retained speed samples against the current qualification
+        # threshold. This lets a policy change from 5 MB/s to 2 MB/s take
+        # effect immediately instead of waiting for the rolling window to age
+        # out under the old threshold.
+        if "speed_mbps" in result and len(speed_samples) == len(samples):
+            samples = [
+                int(speed is not None and speed >= min_speed_mbps)
+                for speed in speed_samples
+            ]
         ok = bool(result.get("qualified", result.get("ok")))
         reachable = bool(result.get("reachable", result.get("ok")))
         samples.append(int(ok))
@@ -329,8 +339,16 @@ def update_history(
         latency_samples.append(
             float(latency) if isinstance(latency, (int, float)) and latency > 0 else None
         )
-        streak = int(prior.get("streak") or 0) + 1 if ok else 0
-        fail_streak = int(prior.get("fail_streak") or 0) + 1 if not ok else 0
+        streak = 0
+        for sample in reversed(samples):
+            if not sample:
+                break
+            streak += 1
+        fail_streak = 0
+        for sample in reversed(samples):
+            if sample:
+                break
+            fail_streak += 1
         pct = round(sum(samples) * 100 / len(samples)) if samples else 0
         reachable_pct = (
             round(sum(availability_samples) * 100 / len(availability_samples))
@@ -534,6 +552,7 @@ async def run(args: argparse.Namespace) -> int:
         results,
         window=args.history_window,
         now=now,
+        min_speed_mbps=args.min_speed_mbps,
     )
     current = select_lines(
         results,

@@ -1,44 +1,30 @@
 #!/usr/bin/env python3
 """Build comprehensive-best (综合最优) ``good.txt`` lists from quality data.
 
-Filters the annotated valid pools to proxies that simultaneously satisfy:
-
-1. CN-reachable      — `china.json` verdict == ``reachable``（当期为准；历史性
-   ``-CN`` 行备注早随该标注入口移除，不再参与判定）
-2. reputation        — when available, score >= 80 (85 for country/set lists)
-   and risk != ``high``; when absent, skip reputation-only filtering
-3. country/set good lists additionally require stable and fast history:
-   at least six recent speed samples, >=90% qualified runs, median >=5 MB/s,
+Filters the annotated valid pools to proxies that satisfy Europe-runner policy.
+Every good list requires stable and fast history:
+   at least six recent speed samples, >=90% qualified runs, median >=2 MB/s,
    and interquartile speed spread <=50%
 
-Survivors with reputation are ranked by a composite score::
+Reputation is optional ranking metadata only. It never rejects a line. When
+present it contributes to a composite ranking score::
 
     score = round(0.6 * rep + 0.2 * latency_score + 0.2 * speed_score)
 
 When reputation is absent, the remaining latency and speed weights are
 renormalized to 50% each, so unknown reputation is neither a penalty nor a
-bonus.
+bonus. China reachability is deliberately not a good-list requirement.
 where ``latency_score`` maps <=100ms to 100 and >=1500ms to 0 linearly
-(missing latency counts 0), and ``speed_score = min(MB/s / 5, 1) * 100``
+(missing latency counts 0), and ``speed_score = min(MB/s / 2, 1) * 100``
 (missing speed counts 0). Ties break by latency asc then key asc.
 
-Latency prefers the mainland-measured value from ``china.json`` (``ms``,
-what a mainland user actually experiences); the overseas TLS latency from
-the line notes is only the fallback when no CN measurement exists.
+Latency and speed are the Europe-runner measurements retained in each input
+line.
 
-Every ``good`` list only contains CN-reachable lines (a ``-CN``-only list by
-construction), so all outputs render the **CN view**: inline latency is the
-mainland-measured ``china.json`` reading and the speed token is rewritten to
-the ``≈XMB/s`` mainland-side estimate (``common._rewrite_cn_speed``), the same
-semantics as ``all_cn.txt``. Per-key dispatch:
-``cn_ms`` map empty -> lines kept verbatim; key present in ``cn_ms`` ->
-latency replaced with mainland RTT and speed rewritten to ``≈XMB/s``; key
-missing from ``cn_ms`` (reachable but no usable reading) -> speed token is
-removed (no data, do not fake) while the inline latitude stays as the
-overseas TLS fallback (kept verbatim, same rule as
-``validate_proxies.write_variant``).
+Good outputs retain the Europe-runner latency and speed annotations verbatim;
+legacy CN-view helpers remain available for older consumers.
 
-Outputs are the CN-viewed annotated lines:
+Outputs are the Europe-viewed annotated lines:
 
 - ``data/valid/all_good.txt``            (global policy group)
 - ``data/valid/countries/<CC>/good.txt`` (per-country groups)
@@ -76,14 +62,14 @@ from common import (
 
 LATENCY_BEST_MS = 100
 LATENCY_WORST_MS = 1500
-SPEED_FULL_MBPS = 5.0
+SPEED_FULL_MBPS = 2.0
 
 MIN_REP_SCORE = 80
 HEALTHY_GOOD_MIN_REP_SCORE = 85
 HEALTH_MIN_SAMPLES = 6
 HEALTH_MIN_SUCCESS_PCT = 90
 HEALTH_MIN_STREAK = 2
-HEALTH_MIN_SPEED_MBPS = 5.0
+HEALTH_MIN_SPEED_MBPS = 2.0
 HEALTH_MAX_SPEED_SPREAD = 0.5
 HEALTH_MAX_AGE_HOURS = 8
 
@@ -123,7 +109,7 @@ def latency_score(ms: int | None) -> float:
 
 
 def speed_score(mbps: float | None) -> float:
-    """``min(mbps / 5, 1) * 100``; missing -> 0."""
+    """``min(mbps / 2, 1) * 100``; missing -> 0."""
     if mbps is None:
         return 0.0
     return min(mbps / SPEED_FULL_MBPS, 1.0) * 100.0
@@ -315,30 +301,21 @@ def filter_rank(
 
     Lines failing the criteria are dropped; survivors keep their annotated
     form verbatim, ordered by ``(score desc, latency asc, key asc)``.
-    Latency uses the mainland-measured ``cn_ms`` value when available and
-    falls back to the overseas TLS latency parsed from the line.
+    Latency uses the Europe-runner TLS latency parsed from each line.
     """
     ranked: list[tuple[int, int, str, str]] = []
     for line in text.splitlines():
         if not line:
             continue
         key = line_to_key(line)
-        if not key or not is_cn_reachable(key, line, china_set):
+        if not key:
             continue
         if not is_healthy(key, health_map):
             continue
         rep = rep_map.get(key)
-        if rep and rep.get("risk") == "high":
-            continue
         rep_score = rep.get("score") if rep else None
-        if rep_score is not None and rep_score < min_rep_score:
-            continue
         overseas_ms, mbps = parse_metrics(line)
-        ms = (
-            round(cn_ms[key])
-            if cn_ms and key in cn_ms
-            else overseas_ms
-        )
+        ms = overseas_ms
         score = composite_score(rep_score, ms, mbps)
         ranked.append((score, ms if ms is not None else LATENCY_WORST_MS, key, line))
     ranked.sort(key=lambda item: (-item[0], item[1], item[2]))
@@ -450,9 +427,12 @@ def write_good_files(
       ``sets/<name>.txt``——目录导航式消费入口（空档位整目录跳过）。
 
     对每目录 ``ltd.txt`` 限量池额外产出 ``good_ltd``（每国最快的优质子集）：
-    同套 good 标准在该池上筛选（CN 可达 + 信誉≥85 + 非高风险 + 健康达标），
+    同套 good 标准在该池上筛选（欧洲健康达标），
     派生 ``_verified`` 与 ``_stable`` 变体，空清单不落盘并清理上轮残留。
     """
+    # ``all*.txt`` are unrestricted candidate pools. Every derived ``good``
+    # output requires a mature Europe history, including root all_good files.
+    health_map = health_map or {}
     stats: dict[str, int] = {}
     speed_keys = load_speed_keys()
     stable_keys = load_china_stable_keys()
@@ -461,7 +441,6 @@ def write_good_files(
 
     def emit(base: Path, lines: list[str], tier_name: str | None = None) -> int:
         raw = lines
-        lines = to_cn_view(lines, cn_ms)
         n = write_good_file(base, lines)
         for suffix, keys in (
             ("_verified", speed_keys),
@@ -474,15 +453,12 @@ def write_good_files(
                 write_text_if_changed(vpath, "\n".join(vlines) + "\n")
             elif vpath.exists():
                 vpath.unlink()
-        # 组内相对最优：good_top.txt（前 25% 分位）。必须用 CN 视图改写前的
-        # 原始海外实测速度遴选（_line_mbps 读行内速度 token），否则无大陆读数
-        # 的行速度 token 已被 _rewrite_cn_speed 删除而连带性剔除、有读数的行
-        # 退化为按 ≈ 估算值排序——两种都不复现「按组内实测速度取前 25%」。
+        # 组内相对最优：good_top.txt（前 25% 分位），按欧洲实测速率遴选。
         tlines, thr = top_slice(raw)
         tpath = base.with_name(f"{base.stem}_top.txt")
         if tlines:
             write_text_if_changed(
-                tpath, "\n".join(to_cn_view(tlines, cn_ms)) + "\n"
+                tpath, "\n".join(tlines) + "\n"
             )
         elif tpath.exists():
             tpath.unlink()
@@ -506,15 +482,16 @@ def write_good_files(
         stats["all_good"] = emit(
             valid_dir / "all_good.txt",
             filter_rank(
-                all_pool.read_text(encoding="utf-8"), china_set, rep_map,
-                cn_ms,
+                all_pool.read_text(encoding="utf-8"),
+                china_set,
+                rep_map,
+                health_map=health_map,
             ),
             tier_name="all",
         )
 
     # good_ltd：对同目录 ltd.txt 限量池按同套标准筛出每国最快的优质子集
     def emit_ltd(base: Path, lines: list[str]) -> int:
-        lines = to_cn_view(lines, cn_ms)
         n = write_good_file(base, lines) if lines else 0
         if not lines:
             base.unlink(missing_ok=True)
@@ -530,18 +507,17 @@ def write_good_files(
                 vpath.unlink()
         return n
 
-    def rank_ltd(pool: Path, *, require_health: bool = True) -> list[str]:
+    def rank_ltd(pool: Path) -> list[str]:
         if not pool.exists():
             return []
         return filter_rank(
-            pool.read_text(encoding="utf-8"), china_set, rep_map, cn_ms,
-            health_map if require_health else None,
-            HEALTHY_GOOD_MIN_REP_SCORE if require_health else MIN_REP_SCORE,
+            pool.read_text(encoding="utf-8"), china_set, rep_map,
+            health_map=health_map,
         )
 
     stats["all_good_ltd"] = emit_ltd(
         valid_dir / "all_good_ltd.txt",
-        rank_ltd(valid_dir / "all_ltd.txt", require_health=False),
+        rank_ltd(valid_dir / "all_ltd.txt"),
     )
 
     for sub in ("countries", "sets"):
@@ -558,7 +534,7 @@ def write_good_files(
                     group_dir / "good.txt",
                     filter_rank(
                         pool.read_text(encoding="utf-8"), china_set, rep_map,
-                        cn_ms, health_map, HEALTHY_GOOD_MIN_REP_SCORE,
+                        health_map=health_map,
                     ),
                     tier_name=rel,
                 )
@@ -613,7 +589,7 @@ def main(argv: list[str] | None = None) -> int:
     health_map = build_health_map(health_data)
     if not health_history_fresh(health_data):
         print(
-            "Europe health history is missing or stale; country/set good lists "
+            "Europe health history is missing or stale; all good lists "
             "will require new qualifying samples",
             file=sys.stderr,
         )

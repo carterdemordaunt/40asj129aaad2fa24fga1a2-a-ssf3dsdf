@@ -59,13 +59,13 @@
 
 ### `scripts/europe_check.py`
 
-从 GitHub Runner 视角对候选做 TLS/HTTP 与独立稳态下载测速（丢弃最多 256 KiB 慢启动数据后计时），并维护 `data/quality/europe.json` 最多 12 轮的逐节点历史。每轮合格要求 HTTP/下载完整成功且实测速度至少 `5 MB/s`。`all_eu_stable.txt` 保留基础滚动筛选；新增 `all_eu_quality.txt` 要求至少 6 个有效速度样本、合格率≥90%、连续合格≥2 轮、滚动中位速度≥5 MB/s、速度 IQR/中位数≤0.5；`all_eu_fast.txt` 在此基础上还要求中位速度≥10 MB/s。质量文件行内速度为滚动中位数，普通当前清单为本轮测速值。
+从 GitHub Runner 视角对候选做 TLS/HTTP 与独立稳态下载测速（丢弃最多 256 KiB 慢启动数据后计时），并维护 `data/quality/europe.json` 最多 12 轮的逐节点历史。每轮合格要求 HTTP/下载完整成功且实测速度至少 `2 MB/s`。`all_eu_stable.txt` 保留基础滚动筛选；新增 `all_eu_quality.txt` 要求至少 6 个有效速度样本、合格率≥90%、连续合格≥2 轮、滚动中位速度≥2 MB/s、速度 IQR/中位数≤0.5；`all_eu_fast.txt` 在此基础上还要求中位速度≥10 MB/s。质量文件行内速度为滚动中位数，普通当前清单为本轮测速值。
 
 | 参数 | 说明 | 默认 |
 |---|---|---|
 | `--source` | 候选池 | `data/valid/all_ltd_verified.txt` |
 | `--history-window` | 保留的最近采样轮次 | 12 |
-| `--min-speed-mbps` | 每轮测速合格门槛 | 5 |
+| `--min-speed-mbps` | 每轮测速合格门槛 | 2 |
 | `--quality-min-samples` | 质量清单最低采样数 | 6 |
 | `--quality-min-success-pct` | 质量清单滚动合格率门槛 | 90 |
 | `--quality-max-speed-spread` | IQR/中位速度最大值 | 0.5 |
@@ -515,21 +515,20 @@ python3 scripts/annotate_classify.py --data-dir /path/to/data
 
 构建综合最优 `good.txt` 清单（策略组/国家组/集合组各一份）。从验证池（`data/valid/all.txt`、`countries/*/all.txt`、`sets/*/all.txt`）中筛选同时满足以下条件的代理，按综合分降序输出（行内容原样保留）：
 
-1. **大陆可达**：`china.json` 判定 `reachable`（仅当期可达集，过期历史 `-CN` 不再兜底——与 `all_cn.txt` 同规则，见 `scripts/china_check.py`「严格交战」）
-2. **可选信誉筛选**：信誉信息存在时，根级 `all_good.txt` 门槛 ≥80；国家/集合 `good.txt` 门槛 ≥85，且已知 `risk=high` 会被排除。优先读取 `reputation.json` 当前记录，缺失时回退 `all.txt` 行尾最近评分；两处都无信誉信息时跳过信誉门槛，不淘汰该节点。只有 risk、没有 score 时仍按已知风险处理，但不执行分数门槛
-3. **节点健康达标（只用于国家/集合 good）**：`europe.json` 最近至少 6 个有效速度样本；合格率 ≥90%；连续合格 ≥2 轮；滚动中位速度 ≥5 MB/s；速度 IQR/中位数 ≤50%
+1. **节点健康达标（所有 good 输出）**：`europe.json` 最近至少 6 个有效速度样本；合格率 ≥90%；连续合格 ≥2 轮；滚动中位速度 ≥2 MB/s；速度 IQR/中位数 ≤50%
+2. **信誉仅用于排序**：信誉缺失、低分或高风险都不会阻止进入 good；有信誉时只参与综合排序分。
 
-综合分在有信誉分时为 `round(0.6×信誉分 + 0.2×延迟分 + 0.2×速度分)`；无信誉分时将剩余两项归一为 `round((延迟分 + 速度分) / 2)`，未知信誉既不扣分也不加分。延迟分 ≤100ms 记 100、≥1500ms 记 0 线性递减，速度分 `min(MB/s÷5, 1)×100`，缺失均记 0。同分依次按延迟升序、key 升序。欧洲历史缺失或过期时国家/集合 `good.txt` 不保留未经新规则验证的节点；`all_good.txt` 仍不要求欧洲历史。
+综合分在有信誉分时为 `round(0.6×信誉分 + 0.2×延迟分 + 0.2×速度分)`；无信誉分时将剩余两项归一为 `round((延迟分 + 速度分) / 2)`。延迟分 ≤100ms 记 100、≥1500ms 记 0 线性递减，速度分 `min(MB/s÷2, 1)×100`，缺失均记 0。同分依次按延迟升序、key 升序。欧洲历史缺失或过期时所有 `good` 输出（包括根级 `all_good.txt`）都不保留未经新规则验证的节点。
 
 | 参数 | 说明 | 默认 |
 |---|---|---|
 | `--data-dir` | 数据根目录（含 `valid/` 与 `quality/`） | `data` |
 
-输出文件名/目录布局不变：`data/valid/all_good.txt` 保留旧门槛（已知信誉分适用 ≥80）；`data/valid/countries/<CC>/good.txt` 与 `data/valid/sets/<name>/good.txt` 应用已知信誉分 ≥85 和欧洲健康门槛，无信誉信息时跳过信誉筛选。既有 `*_verified/_stable/_uptime/_top/_<tier>`、`good_ltd`、tiers、`all_diverse.txt` 与 `good_meta.json` 继续生成。`build-good.yml` 在欧洲检查成功后重建；信誉刷新工作流在刷新脚本成功后也会重建 good，不要求本轮信誉快照发布成功。
+输出文件名/目录布局不变：候选池 `all.txt`/`all_ltd.txt` 不应用 good 门槛；根级 `all_good.txt`/`all_good_ltd.txt` 以及国家/集合 `good.txt`/`good_ltd.txt` 均要求欧洲健康。所有 good 视图均不要求中国可达或信誉门槛。既有 `*_verified/_stable/_uptime/_top/_<tier>`、`good_ltd`、tiers、`all_diverse.txt` 与 `good_meta.json` 继续生成。`build-good.yml` 在欧洲检查成功后重建；信誉刷新工作流在刷新脚本成功后也会重建 good，不要求本轮信誉快照发布成功。
 
-每一份 `good` 清单都只含大陆可达行（仅 CN 列表），因此全部输出统一渲染 **CN 视图**：行内延迟改写为大陆实测 `china.json` 读数、速度令牌改写为 `≈XMB/s` 大陆估算值（语义与 `all_cn.txt` 一致）；无 `cn_ms` 数据时行保持原样。专职 `.github/workflows/build-good.yml` 在 `Europe reachability check` 成功后运行本脚本；它只消费已有的 CN/信誉快照，不刷新相关数据，也不构建 premium。历史预热期间仍更新旧标准 `all_good.txt`，国家/集合 good 只写已有成熟健康记录的节点。
+每一份 `good` 清单保留欧洲 Runner 的延迟和实测速率标注，不依赖 `china.json`。专职 `.github/workflows/build-good.yml` 在 `Europe reachability check` 成功后运行本脚本；它只消费已有的欧洲健康和信誉快照，不刷新相关数据，也不构建 premium。历史预热期间候选池仍可更新，但 `good` 输出只写已有成熟欧洲健康记录的节点。
 
-**写入与护栏**：`build-good.yml` 与信誉刷新工作流调用 `build_good.py` 写入 good 清单，不调用 `build_premium.py`。Action 先运行 `tests.test_build_good`，其中包含 CN 视图不变式测试，再使用 `commit_data.sh` 仅提交本次生成的数据文件。信誉覆盖率低不会冻结 good 清单；缺失信誉按无信誉条件处理，欧洲健康门槛照常执行。
+**写入与护栏**：`build-good.yml` 与信誉刷新工作流调用 `build_good.py` 写入 good 清单，不调用 `build_premium.py`。Action 先运行 `tests.test_build_good`，再使用 `commit_data.sh` 仅提交本次生成的数据文件。信誉覆盖率低不会冻结 good 清单；缺失信誉按无信誉条件处理，所有 good 输出的欧洲健康门槛照常执行。
 
 ```bash
 python3 scripts/build_good.py
