@@ -49,7 +49,7 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         run: >-
           python scripts/europe_check.py
-          --min-speed-mbps 5
+          --min-speed-mbps 2
 
       - name: Commit Europe results
         if: steps.gate.outputs.skip != 'true'
