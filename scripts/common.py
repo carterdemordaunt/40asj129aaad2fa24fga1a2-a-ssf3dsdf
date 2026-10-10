@@ -111,7 +111,8 @@ EXT_API_SOURCES = [
 # ---------------------------------------------------------------- ip-api 共享常量
 IPAPI_BATCH_URL = "http://ip-api.com/batch"
 IPAPI_BATCH_SIZE = 100
-IPAPI_BATCH_DELAY = 1.2
+# The free ip-api batch endpoint is limited to 15 requests per minute.
+IPAPI_BATCH_DELAY = 4.1
 
 # ---------------------------------------------------------------- 共享正则
 EXIT_REGION_RE = re.compile(r"^(.*#[^A-Z]*[A-Z]+)")

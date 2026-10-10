@@ -19,6 +19,7 @@ import sys
 import time
 import urllib.error
 import urllib.parse
+import urllib.request
 from bisect import bisect_right
 
 from common import *  # noqa: F401,F403  (paths, UA, write_json, keyed_json, ...)
@@ -72,6 +73,10 @@ ABUSEIPDB_PUBLIC_URL = (
 )
 # ~8.2MB 是静态源中体量最大的：放宽容限避免慢网统一 15s 超时 fail-open。
 ABUSEIPDB_PUBLIC_TIMEOUT = 45
+IPQUERY_URL = "https://api.ipquery.io/{ip}"
+FREEIPAPI_URL = "https://freeipapi.com/api/json/{ip}"
+IPQUERY_CAP = 3000
+FREEIPAPI_CAP = 3000
 # Wwuyi123 维护者实测不可达 IP（其 CF 反代候选池的失联项，裸 IP 行）：
 # 第三方"用不上"证据，非滥用，温和口径（is_listed + 静态 70 + 权重 2）。
 WWUYI_UNREACHABLE_URL = (
@@ -370,13 +375,13 @@ SOURCE_PACING = {
     "blackbox": (8, 0.2),
     "otx": (6, 0.3),
     "ipapi_is": (8, 0.2),
-    "ipquery": (6, 0.2),
+    "ipquery": (1, 1.05),
     "ffraud": (6, 0.2),
     "whatismyip": (6, 0.2),
     "proxycheck": (8, 0.2),
     "ip2location": (6, 0.2),
     "ipwhois": (6, 0.2),
-    "freeipapi": (8, 0.15),
+    "freeipapi": (1, 1.05),
     "hackmyip": (6, 0.2),
     "scamalytics": (4, 0.5),
     "iplocation": (8, 0.12),
@@ -460,8 +465,8 @@ class IpSet:
 
 
 # 已迁出公开树且当前没有可分发实现的逐 IP provider 明确禁用；不再动态
-# import、不再把“缺插件”当作正常生产配置。静态公开黑名单与 ip-api 地理
-# 信号仍在本模块/quality_check 中直接运行。
+# import、不再把“缺插件”当作正常生产配置。IPQuery 与 FreeIPAPI 保留公开
+# 直连实现；静态名单和 ip-api 地理信号也在公开代码中运行。
 _REP_NETCOFFEE_BUNDLE = False
 _REP_NCGY_BUNDLE = False
 _REP_GREYNOISE_BUNDLE = False
@@ -474,13 +479,52 @@ _REP_WHATISMYIP_BUNDLE = False
 _REP_BLACKBOX_BUNDLE = False
 _REP_OTX_BUNDLE = False
 
+
+def _fetch_provider_json(url: str) -> dict:
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": UA, "Accept": "application/json"},
+    )
+    raw = fetch_with_deadline(req, timeout=12, max_bytes=1024 * 1024)
+    payload = json.loads(raw.decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("provider response is not a JSON object")
+    return payload
+
+
+def ipquery_lookup_sync(ip: str) -> dict:
+    """Read IPQuery's public risk flags and score without an API key."""
+    url = IPQUERY_URL.format(ip=urllib.parse.quote(ip, safe=":"))
+    payload = _fetch_provider_json(url)
+    response_ip = payload.get("ip")
+    if response_ip and response_ip != ip:
+        raise ValueError("IPQuery returned a different IP")
+    risk = payload.get("risk")
+    isp = payload.get("isp")
+    if not isinstance(risk, dict) or not isinstance(isp, dict):
+        raise ValueError("IPQuery response is missing risk or ISP data")
+    signal = {}
+    for key in ("is_mobile", "is_vpn", "is_tor", "is_proxy", "is_datacenter"):
+        value = risk.get(key)
+        if isinstance(value, bool):
+            signal[key] = value
+    score = risk.get("risk_score")
+    if isinstance(score, (int, float)) and not isinstance(score, bool):
+        signal["risk_score"] = max(0, min(100, score))
+    asn = isp.get("asn")
+    if isinstance(asn, str) and asn:
+        signal["asn"] = asn
+    if not signal:
+        raise ValueError("IPQuery response contains no usable reputation fields")
+    return signal
+
+
 netcoffee_lookup_sync = None
 ncgy_lookup_sync = None
 greynoise_lookup_sync = None
 ipdata_lookup_sync = None
 getipintel_lookup_sync = None
 ipapi_is_lookup_sync = None
-ipquery_lookup_sync = None
 ffraud_lookup_sync = None
 whatismyip_lookup_sync = None
 blackbox_lookup_sync = None
@@ -792,20 +836,37 @@ sorbs_lookup_sync = None
 uceprotect_lookup_sync = None
 psbl_lookup_sync = None
 abuse_lookup_sync = None
-freeipapi_lookup_sync = None
+
+
+def freeipapi_lookup_sync(ip: str) -> dict:
+    """Read FreeIPAPI's public proxy flag without an API key."""
+    url = FREEIPAPI_URL.format(ip=urllib.parse.quote(ip, safe=":"))
+    payload = _fetch_provider_json(url)
+    response_ip = payload.get("ipAddress")
+    if response_ip and response_ip != ip:
+        raise ValueError("FreeIPAPI returned a different IP")
+    is_proxy = payload.get("isProxy")
+    if not isinstance(is_proxy, bool):
+        raise ValueError("FreeIPAPI response is missing isProxy")
+    signal = {"is_proxy": is_proxy}
+    asn = payload.get("asn")
+    if isinstance(asn, str) and asn:
+        signal["asn"] = asn
+    return signal
+
+
 hackmyip_lookup_sync = None
 scamalytics_lookup_sync = None
 iplocation_lookup_sync = None
 
 STOPFORUMSPAM_CAP = 3000
 MALTIVERSE_CAP = 2500
-FREEIPAPI_CAP = 3000
 SCAMALYTICS_CAP = 1500
 IPLOCATION_CAP = 3000
 
-# These providers are intentionally optional: their implementations live in
-# the private PCB bundle in the upstream project. Keep the availability check
-# explicit so a public run cannot look as if all configured sources responded.
+# Providers without a public implementation remain optional. Keep the
+# availability check explicit so a public run cannot count missing sources as
+# if they had responded.
 _REP_LOOKUP_BINDINGS = {
     "netcoffee": "netcoffee_lookup_sync",
     "ncgy": "ncgy_lookup_sync",
@@ -1112,9 +1173,9 @@ async def batch_sync(
             if ok:
                 # None=成功响应但无信号：记录（供负缓存）但不重试
                 out[ip] = res
-                await asyncio.sleep(delay)
             else:
                 failed.append(ip)
+            await asyncio.sleep(delay)
 
     await asyncio.gather(*(work(ip) for ip in items))
     for _attempt in range(retries):
@@ -2158,7 +2219,10 @@ async def lookup_all_risk(
         api_tasks.append(cached_batch("ipapi_is", ipapi_is_lookup_sync, workers=w, delay=d))
     if "ipquery" in sources and ipquery_lookup_sync is not None:
         w, d = pacing.get("ipquery", (REP_WORKERS, REP_DELAY))
-        api_tasks.append(cached_batch("ipquery", ipquery_lookup_sync, workers=w, delay=d))
+        api_tasks.append(cached_batch(
+            "ipquery", ipquery_lookup_sync, cap=IPQUERY_CAP,
+            workers=w, delay=d,
+        ))
     if "ffraud" in sources and ffraud_lookup_sync is not None:
         w, d = pacing.get("ffraud", (REP_WORKERS, REP_DELAY))
         api_tasks.append(cached_batch("ffraud", ffraud_lookup_sync, workers=w, delay=d))

@@ -1,0 +1,50 @@
+name: Reputation refresh
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: content-data-quality
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Refresh public reputation sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout content branch
+        uses: actions/checkout@v7
+        with:
+          ref: content
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Test reputation refresh
+        run: >-
+          python -m unittest tests.test_reputation_refresh
+          tests.test_build_good tests.test_quality -q
+
+      - name: Refresh reputation scores
+        id: reputation
+        run: >-
+          python scripts/refresh_reputation.py
+          --time-budget 5400
+          --rep-cache-ttl 604800
+
+      - name: Rebuild good lists
+        if: steps.reputation.outcome == 'success'
+        run: python scripts/build_good.py
+
+      - name: Commit refreshed reputation and good lists
+        if: success() && steps.reputation.outcome == 'success'
+        run: |
+          bash .github/scripts/commit_data.sh "chore(data): refresh reputation sources ($(date -u +%Y-%m-%dT%H:%M:%SZ))"

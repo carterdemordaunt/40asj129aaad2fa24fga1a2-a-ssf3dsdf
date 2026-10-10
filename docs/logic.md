@@ -681,8 +681,8 @@ annotate 系，待验证），机制已根治。
 1. **竞态去重**：用 `gh run list` 查同工作流是否有更新的 in_progress/queued
    运行，有则让位（旧运行自动跳过），防止积压排队。
 2. **触发者状态闸（仅 `workflow_run` 链）**：quality-check（←update-proxies）、
-   exit-family / annotate-classify（←quality-check）、build-good（←quality/
-   china）、stats（←quality/china/exit-family/build-good）在触发工作流
+   exit-family / annotate-classify（←quality-check）、build-good（←Europe
+   reachability check）、stats（←quality/china/exit-family/build-good）在触发工作流
    conclusion 非 success 时**跳过**——上游失败说明本轮没有新的数据产物，
    无需浪费一次下游重算。
 

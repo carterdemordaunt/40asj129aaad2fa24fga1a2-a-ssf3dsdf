@@ -57,6 +57,23 @@
 
 每个清单（含根级 `all*.txt` 与全部分组）同步派生两个可靠性维度：`*_verified.txt`（本轮测速成功 = TLS + HTTP 2xx + 真实下载全链路通过，过滤半死代理）与 `*_stable.txt`（上一轮 `index.json` 与本轮存活的交集，抗 churn；首轮无上一轮数据时不生成）。可与任意分组叠加，如 `countries/US/cn4_verified.txt`、根级 `all_cn4_stable.txt`；`ltd` 家族同样派生（`ltd_verified.txt`、根级 `all_ltd_stable.txt`）。空清单不落盘并清理残留，数量计入 `meta.json` 的 `sets.all_verified` / `sets.all_stable`。
 
+### `scripts/europe_check.py`
+
+从 GitHub Runner 视角对候选做 TLS/HTTP 与独立稳态下载测速（丢弃最多 256 KiB 慢启动数据后计时），并维护 `data/quality/europe.json` 最多 12 轮的逐节点历史。每轮合格要求 HTTP/下载完整成功且实测速度至少 `5 MB/s`。`all_eu_stable.txt` 保留基础滚动筛选；新增 `all_eu_quality.txt` 要求至少 6 个有效速度样本、合格率≥90%、连续合格≥2 轮、滚动中位速度≥5 MB/s、速度 IQR/中位数≤0.5；`all_eu_fast.txt` 在此基础上还要求中位速度≥10 MB/s。质量文件行内速度为滚动中位数，普通当前清单为本轮测速值。
+
+| 参数 | 说明 | 默认 |
+|---|---|---|
+| `--source` | 候选池 | `data/valid/all_ltd_verified.txt` |
+| `--history-window` | 保留的最近采样轮次 | 12 |
+| `--min-speed-mbps` | 每轮测速合格门槛 | 5 |
+| `--quality-min-samples` | 质量清单最低采样数 | 6 |
+| `--quality-min-success-pct` | 质量清单滚动合格率门槛 | 90 |
+| `--quality-max-speed-spread` | IQR/中位速度最大值 | 0.5 |
+| `--fast-median-speed-mbps` | 高速清单中位速度门槛 | 10 |
+| `--output-limit` | 每个输出最多节点数（0=不限） | 500 |
+
+质量历史不足 6 个有效速度样本时不会用空文件覆盖已有 `all_eu_quality.txt`/`all_eu_fast.txt`。采集间隔超过 12 小时会清空旧窗口重新积累；当整轮成功率异常低时，历史与清单均保持不变。
+
 ### `scripts/generate_stats.py`
 
 读取历史与验证汇总，生成统计与一组零依赖 SVG 图表。
@@ -120,7 +137,7 @@
 | `netcoffee` | 20 | 免费 JSON 信誉（抓取实现已迁 PCB）；`trust_score` 直用；标志罚分：abuser 40 / tor 35 / proxy 30 / vpn 25 / datacenter 15，另加 `company_type`/`asn_kind` 机房 +15、`abuser_score`≥0.1 +20 |
 | `ncgy` | 10 | 免费 JSON 匿名 IP 库（MaxMind，抓取实现已迁 PCB）；`is_tor` 45 / `is_proxy` 30 / `is_vpn` 25 / `is_anonymous` 10 |
 | `ip-api` | 15 | 本地批量地理的标志：proxy / hosting 判负、mobile 奖励 +5；`countryCode` 存在即计入 |
-| `ipquery` | 12 | 免费 JSON 风险查询（抓取实现已迁 PCB）；`risk_score` 直用，或标志罚分：tor 45 / vpn 30 / proxy 25 / datacenter 15（取二者较大罚分） |
+| `ipquery` | 12 | 免 key JSON 风险查询（公开直连）；`risk_score` 直用，或标志罚分：tor 45 / vpn 30 / proxy 25 / datacenter 15（取二者较大罚分） |
 | `ffraud` | 12 | 免费 JSON 风险查询（抓取实现已迁 PCB）；`fraud_score` 直用，或 tor/vpn/proxy/hosting/abuser/recent_abuse 罚分（取较大者） |
 | `blackbox` | 10 | 免费 JSON 分类/信号（抓取实现已迁 PCB）；分类评分：residential 95 / mobile 90 / business 85 / hosting 60 / vpn 55 / privacy_relay 50 / tor 10 / bogon 5 / unknown 50；suspicious -20 |
 | `otx` | 8 | 免费 JSON 信誉（抓取实现已迁 PCB）；`100 - (min(reputation×5,80) + min(pulse_count×2,20))` |
@@ -137,7 +154,7 @@
 | `ipwhois` | 6 | 免费 JSON 风险查询（抓取实现已迁 PCB，opt-in）——**已退出默认源**：免费层不再返回 `connection`/`security` 字段，纯信号为 0 却每轮仍产生 HTTP 调用；解析器保留，若上游恢复字段可用 `--reputation-sources` 重新启用。`security.proxy/vpn/tor/hosting` 各 -25、`security.anonymous` -8 |
 | `tor_exit` | 5 | check.torproject.org 出口节点实时列表（免费），命中即投 `tor` 票 |
 | `spamhaus` | 4 | Spamhaus DROP + EDROP 端用户高风险网段静态表（免费，`<cidr> ; 描述`），命中即投 `listed` 票 |
-| `freeipapi` | 6 | 免费 JSON 风险查询（抓取实现已迁 PCB）；`isProxy` 标志 -30，附 ASN/org |
+| `freeipapi` | 6 | 免 key JSON 风险查询（公开直连）；`isProxy` 标志 -30，附 ASN |
 | `hackmyip` | 6 | 免费 JSON 风险查询（抓取实现已迁 PCB）；hosting/proxy/mobile 标志参与投票，附 ASN |
 | `scamalytics` | 8 | 免费风险页抓取（抓取实现已迁 PCB）；分值 0-100 直扣，黑名单标记投 `listed` 票 |
 | `iplocation` | 3 | 免费 JSON 风险查询（抓取实现已迁 PCB）；`is_proxy` -30，附 isp。**R269 起退出默认源**（最低权重、proxy 维度被 hackmyip/freeipapi/scamalytics 覆盖），opt-in 可用 |
@@ -194,8 +211,9 @@
 | `blackbox/proxycheck` | 8 worker、0.2s |  |
 | `ipapi_is` | 8 worker、0.2s |  |
 | `otx` | 6 worker、0.3s |  |
-| `ipquery/ffraud/whatismyip/ip2location/ipwhois` | 6 worker、0.2s |  |
-| `freeipapi` | 8 worker、0.15s | （上限 3000/轮） |
+| `ipquery` | 1 worker、1.05s | （上限 3000/轮，免 key） |
+| `freeipapi` | 1 worker、1.05s | （上限 3000/轮，免 key） |
+| `ffraud/whatismyip/ip2location/ipwhois` | 6 worker、0.2s |  |
 | `hackmyip` | 6 worker、0.2s |  |
 | `scamalytics` | 4 worker、0.5s | （上限 1500/轮） |
 | `stopforumspam` | 4 worker、0.3s | （上限 3000/轮） |
@@ -237,6 +255,18 @@ TLS 探测引擎（quality_check 内部调用/独立运行）。对存活代理�
 不随过期删除）。参数
 （`--getipintel-email`/`--rep-cache-ttl`/`--no-rep-cache`）经 quality_check
 透传生效。
+
+### `scripts/refresh_reputation.py`
+
+独立更新信誉快照，不运行代理存活验证或 CN 探测。出口 IP 按外部出口回显、`exit_family.json`、旧 `ipinfo.json`、代理入口 IP 的顺序选择；随后刷新 ip-api 地理与默认免 key/静态信誉源，复用 `reputation_cache.json`。信誉覆盖率低于 25% 且候选池至少 100 条时保留上次 `reputation.json` 和行尾分数，但刷新脚本成功后仍重建 good：可用的信誉信息继续应用原规则，完全缺少信誉信息的节点跳过信誉筛选。
+
+| 参数 | 说明 | 默认 |
+|---|---|---|
+| `--source` | 已验证代理列表 | `data/valid/all.txt` |
+| `--rep-cache-ttl` | 单 IP × 源缓存 TTL（秒） | 7 天 |
+| `--time-budget` | 停止开启网络请求的总时限（秒） | 5400 |
+
+`.github/workflows/reputation-refresh.yml` 每日 04:17 UTC 运行，也支持手动触发；刷新脚本成功即执行 `build_good.py`，无论本轮信誉快照是否发布。低覆盖运行仍会保存缓存与审计元数据供后续回填。
 
 ### `scripts/reorg_country.py`
 
@@ -486,20 +516,20 @@ python3 scripts/annotate_classify.py --data-dir /path/to/data
 构建综合最优 `good.txt` 清单（策略组/国家组/集合组各一份）。从验证池（`data/valid/all.txt`、`countries/*/all.txt`、`sets/*/all.txt`）中筛选同时满足以下条件的代理，按综合分降序输出（行内容原样保留）：
 
 1. **大陆可达**：`china.json` 判定 `reachable`（仅当期可达集，过期历史 `-CN` 不再兜底——与 `all_cn.txt` 同规则，见 `scripts/china_check.py`「严格交战」）
-2. **信誉分 ≥ 80**：存在于 `reputation.json` 且 `score >= 80`
-3. **非高风险**：`reputation.json` 的 `risk != high`
+2. **可选信誉筛选**：信誉信息存在时，根级 `all_good.txt` 门槛 ≥80；国家/集合 `good.txt` 门槛 ≥85，且已知 `risk=high` 会被排除。优先读取 `reputation.json` 当前记录，缺失时回退 `all.txt` 行尾最近评分；两处都无信誉信息时跳过信誉门槛，不淘汰该节点。只有 risk、没有 score 时仍按已知风险处理，但不执行分数门槛
+3. **节点健康达标（只用于国家/集合 good）**：`europe.json` 最近至少 6 个有效速度样本；合格率 ≥90%；连续合格 ≥2 轮；滚动中位速度 ≥5 MB/s；速度 IQR/中位数 ≤50%
 
-综合分公式（信誉为主）：`round(0.6×信誉分 + 0.2×延迟分 + 0.2×速度分)`；延迟分 ≤100ms 记 100、≥1500ms 记 0 线性递减，速度分 `min(MB/s÷5, 1)×100`，缺失均记 0。同分依次按延迟升序、key 升序。质量 JSON 缺失时优雅降级为空清单。
+综合分在有信誉分时为 `round(0.6×信誉分 + 0.2×延迟分 + 0.2×速度分)`；无信誉分时将剩余两项归一为 `round((延迟分 + 速度分) / 2)`，未知信誉既不扣分也不加分。延迟分 ≤100ms 记 100、≥1500ms 记 0 线性递减，速度分 `min(MB/s÷5, 1)×100`，缺失均记 0。同分依次按延迟升序、key 升序。欧洲历史缺失或过期时国家/集合 `good.txt` 不保留未经新规则验证的节点；`all_good.txt` 仍不要求欧洲历史。
 
 | 参数 | 说明 | 默认 |
 |---|---|---|
 | `--data-dir` | 数据根目录（含 `valid/` 与 `quality/`） | `data` |
 
-输出文件：`data/valid/all_good.txt`、`data/valid/countries/<CC>/good.txt`、`data/valid/sets/<name>/good.txt`。每份同步派生 `*_verified.txt`（speed.json 全链路验证）、`*_stable.txt`（china.json streak≥2 跨轮稳定）与 `*_uptime.txt`（uptime.json 滚动可用率）可靠性变体，`*_top.txt` 组内最优（前 25% 分位，按组内实测速度）与 `_<tier>.txt` 速度档变体；对同目录 `ltd.txt` 池额外产出 `good_ltd(+_verified/_stable)`（每国最快的优质子集）。另写 `data/valid/all_diverse.txt`（出口多样性视图：每实测出口/入口网段仅留综合分最高一条、全局按分降序，见 `data-spec.md`；非 CN 专属，保留海外视图）与 `data/quality/good_meta.json` 汇总（含 `ts`/`file_count`/`proxy_count`）。
+输出文件名/目录布局不变：`data/valid/all_good.txt` 保留旧门槛（已知信誉分适用 ≥80）；`data/valid/countries/<CC>/good.txt` 与 `data/valid/sets/<name>/good.txt` 应用已知信誉分 ≥85 和欧洲健康门槛，无信誉信息时跳过信誉筛选。既有 `*_verified/_stable/_uptime/_top/_<tier>`、`good_ltd`、tiers、`all_diverse.txt` 与 `good_meta.json` 继续生成。`build-good.yml` 在欧洲检查成功后重建；信誉刷新工作流在刷新脚本成功后也会重建 good，不要求本轮信誉快照发布成功。
 
-每一份 `good` 清单都只含大陆可达行（仅 CN 列表），因此全部输出统一渲染 **CN 视图**：行内延迟改写为大陆实测 `china.json` 读数、速度令牌改写为 `≈XMB/s` 大陆估算值（语义与 `all_cn.txt` 一致）；无 `cn_ms` 数据时行保持原样。CI 在 `build-good.yml` 专职工作流中运行（与其后 `build_premium.py` 同 job）；`annotate-classify.yml` 与 `exit-family.yml` 的后缀填充步骤后亦运行。
+每一份 `good` 清单都只含大陆可达行（仅 CN 列表），因此全部输出统一渲染 **CN 视图**：行内延迟改写为大陆实测 `china.json` 读数、速度令牌改写为 `≈XMB/s` 大陆估算值（语义与 `all_cn.txt` 一致）；无 `cn_ms` 数据时行保持原样。专职 `.github/workflows/build-good.yml` 在 `Europe reachability check` 成功后运行本脚本；它只消费已有的 CN/信誉快照，不刷新相关数据，也不构建 premium。历史预热期间仍更新旧标准 `all_good.txt`，国家/集合 good 只写已有成熟健康记录的节点。
 
-**写入者与护栏**：`build_good.py`/`build_premium.py` 并非单一写入者——`annotate-classify` 与 `exit-family` 工作流也会调用它们，跨 runner 并发写 `data/valid/*.txt` 与 good 清单，各自后 push 胜出、数据链下一轮自愈（勿在别处声称「单一写入者」）。`build-good.yml` 在 `commit_data.sh` 提交前跑 `test_build_good.TestCommittedCnViewInvariant` 护栏：扫描仓库内全部 good/premium/tiers/`all_cn*` 文件，任一混入海外实测 `-\d+\.\d+MB/s` 纯速度即中止提交（防陈旧 `china.json`/空 `cn_ms` 让速度原样透传）；护栏由 `Quality check`/`China check` 任一成功完成触发，失败触发跳过。
+**写入与护栏**：`build-good.yml` 与信誉刷新工作流调用 `build_good.py` 写入 good 清单，不调用 `build_premium.py`。Action 先运行 `tests.test_build_good`，其中包含 CN 视图不变式测试，再使用 `commit_data.sh` 仅提交本次生成的数据文件。信誉覆盖率低不会冻结 good 清单；缺失信誉按无信誉条件处理，欧洲健康门槛照常执行。
 
 ```bash
 python3 scripts/build_good.py
@@ -523,7 +553,7 @@ python3 scripts/build_good.py --data-dir /path/to/data
 
 输出文件：`data/valid/all_premium.txt`、`data/valid/countries/<CC>/premium.txt`、`data/valid/sets/<name>/premium.txt`。每份同步派生 `*_verified.txt`（speed.json 全链路验证）、`*_stable.txt`（china.json streak≥2 跨轮稳定）与 `*_uptime.txt`（uptime.json 滚动可用率）可靠性变体，以及 `_<tier>.txt` 速度档变体。另按输出家族派生 **v4/v6/46 分支**：`*_v4.txt`、`*_v6.txt`、`*_46.txt`（含各自的派生变体），家族判定优先 `exit_family.json`（无记录时按行内 `-V4`/`-V6`/`-DS` 兜底、记录 `unknown` 不回落；与 `v4`/`v6`/`46` 组文件同规则），无对应家族时分支空则不留盘并清理残留。另写 `data/quality/premium_meta.json` 汇总（`ts`/`file_count`/`proxy_count`，见 data-spec.md）。
 
-每一份 `premium` 清单都只含大陆可达行（仅 CN 列表），因此全部输出统一渲染 **CN 视图**：行内延迟改写为大陆实测 `china.json` 读数、速度令牌改写为 `≈XMB/s` 大陆估算值（语义与 `all_cn.txt` 一致）；无 `cn_ms` 数据时行保持原样。CI 在 `build-good.yml` 专职工作流中与 `build_good.py` 同 job 运行。
+每一份 `premium` 清单都只含大陆可达行（仅 CN 列表），因此全部输出统一渲染 **CN 视图**：行内延迟改写为大陆实测 `china.json` 读数、速度令牌改写为 `≈XMB/s` 大陆估算值（语义与 `all_cn.txt` 一致）；无 `cn_ms` 数据时行保持原样。`build_premium.py` 当前不在自动 workflow 中运行。
 
 ```bash
 python3 scripts/build_premium.py

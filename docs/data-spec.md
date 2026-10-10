@@ -258,13 +258,19 @@ Status 徽章端点数据（shields.io `endpoint` 格式，供 README 徽章与�
 
 单行 JSON，顶层 `proxies` 键为 `ip:port#国家`，值为出口 IP 信息：`exit_ip`、`country`/`country_code`/`region`/`city`（出口地理）、`asn`/`org`/`isp`、`proxy`/`hosting`/`mobile` 标志、`ip_type`（DC/RES/MOB/PROXY）、`listed_country` 与 `country_match`（是否错区）、`geo_checked`（是否查到出口地理）、`ext_ok`/`ext_colo`/`ext_response_ms`（external_check 探测概要：成功与否 / 边缘 colo / 响应耗时）、`reputation`（0-100 信誉分，见下方口径说明）、`rep_flags`（共识确定的语义维度：proxy/vpn/tor/hosting/mobile/abuse/listed/scraper/crawler/anonymous）、`rep_sources`（参与投票的源列表）、`risk_sources`（参与连续型风险罚分的源列表）、`reputation_source`（netcoffee/ncgy/ip-api/ipquery/ffraud/blackbox/otx/ipsum/ipapi_is/ipdata/whatismyip/dc_asn/abuse_list/vpn_asn/resproxy_asn/proxycheck/ip2location/stopforumspam/maltiverse/tor_exit/spamhaus/getipintel/abuseipdb/ipqs/dnsbl/spamcop/abuseipdb_public/wwuyi_unreachable/wwuyi_blocked/firehol_level2/bruteforceblocker/dataplane_vncrfb/drb_c2/nordvpn_exits/blackhole_monster/myipms_blacklist/ipnoise，多源时为 multi；实际数据中另出现过下载侧 legacy 来源标记 `blocklist_de`/`firehol_level1`/`freeipapi`/`hackmyip`/`iplocation`/`scamalytics` 等；`ipwhois` 免费层已不再返回 `connection`/`security`、`ipapi_is` 在 CI 出口从未成功响应，二者均退出默认源仅作 opt-in）、`risk`（由信誉分推导或滥用分）。注：地址族（`family`）和双栈（`dual_stack`）信息在 `exit_family.json` 中，不在本文件；各 API 源的原始信号仅在 `reputation_cache.json`（7 天 TTL）中，ipinfo 不再冗余携带。
 
-**口径说明**：`reputation` 为**含 ip-api 地理信号**的运行维度分（`build_ipinfo_map`，ip-api 查到 `countryCode` 即参与投票；存在 abuse 分时直接 `100-abuse`）；行尾 `-<score>` 注解与 `reputation.json` 的 `score` 为**不含 ip-api** 的静态黑名单信号分（`build_reputation_map`，build_good 的 ≥80 门槛与 premium 消费此口径）。启用 abuse 服务时两数差距可不止单源权重（`reputation` 走 `100-abuse`，`reputation.json` 仍纯信号分），勿跨文件混用。
+**口径说明**：`reputation` 为**含 ip-api 地理信号**的运行维度分（`build_ipinfo_map`，ip-api 查到 `countryCode` 即参与投票；存在 abuse 分时直接 `100-abuse`）；行尾 `-<score>` 注解与 `reputation.json` 的 `score` 为**不含 ip-api** 的静态黑名单信号分（`build_reputation_map`，good 与 premium 消费此口径）。`build_good.py` 优先用 `reputation.json` 当前分数，缺失时回退 `all.txt` 行尾保留的上次分数；全局 `all_good.txt` 门槛为 ≥80，国家/集合 `good.txt` 为 ≥85。启用 abuse 服务时两数差距可不止单源权重（`reputation` 走 `100-abuse`，`reputation.json` 仍纯信号分），勿跨文件混用。
 
 ### `data/quality/node_seen.json` 与 `data/quality/uptime.json`
 
 `node_seen.json`：`{runs: {<YYYY-MM-DD>: 轮次计数}, proxies: {<key>: [出现日期…]}}`——滚动 45 天窗口的按轮存活记录。
 
 `uptime.json`：`{proxies: {<key>: {pct7, pct30, hits7, hits30, last_seen}}, runs7, runs30, ts}`。pct 为窗口内存现天数 ÷ **窗口内实际有质量轮的日期数**（去重，同日多轮算 1 天）的百分比——存现与分母同按日粒度，每个运行日都在场即 100%，缺一天按比例扣分（同一运行日多次运行不稀释分母，避免全勤节点被轮次总数低估）。
+
+### `data/quality/europe.json` 与欧洲质量清单
+
+`europe.json` 由 `europe_check.py` 写入，顶层 `{ts, vantage, window, proxies}`；默认保留最近 12 个 Runner 采样轮次。`proxies[key]` 包含 `samples`（HTTP+下载且速度≥门槛的 0/1 序列）、`availability_samples`（HTTP 探测通过的 0/1 序列）、`speed_samples`/`latency_samples`、`success_pct`、`reachable_pct`、`median_speed_mbps`、`p25_speed_mbps`、`p75_speed_mbps`、`speed_spread_pct=(p75-p25)/median`、连续成功/失败轮数与最后检测时间。速度样本来自独立 HTTPS 稳态下载，排除 TCP 慢启动数据；采集间隔超过 12 小时，历史窗口重置。
+
+`all_eu.txt` 是本轮通过 HTTP + 下载门槛（默认 5 MB/s）的节点，速度写本轮实测；`all_eu_stable.txt` 是滚动至少 3 轮、成功率≥80%、连续成功≥2轮的当前合格子集；`all_eu_quality.txt` 进一步要求至少 6 个有效速度样本、成功率≥90%、中位速度≥5 MB/s、IQR/中位数≤0.5；`all_eu_fast.txt` 是 quality 中位速度≥10 MB/s 的子集。后两者的速度字段写滚动中位数。健康历史不足 6 个有效速度样本时保留既有 quality/fast 输出，不会因启动阶段样本少而删除旧订阅。
 
 ### `data/valid/all.json`
 
@@ -278,7 +284,11 @@ Status 徽章端点数据（shields.io `endpoint` 格式，供 README 徽章与�
 
 ### `data/quality/quality_meta.json`
 
-质量检测汇总（供 stats 消费）：`ts`（生成时间戳 ISO-8601）、`total`（代理总数）、`tls`（参与本轮质量检测的键数——quality 链以外部 API 回显判活、不做本地 TLS 握手，故含 validate `--ext-check` 复活的 `method=ext` 键，勿与 `index.json` 的 by_method 口径混用）、`by_type`（IP 类型分布）、`ext_check_total`/`ext_check_ok`（外部 API 检查计数，`ok`=被外检覆盖的 TLS 存活键数 + 外检复活键数）、`country_mismatch`（错区数）、`risk`、`abuse_checked`、`reputation_checked`（本轮获分条数）、`reputation_coverage`（本轮信誉覆盖率）、`reputation_degraded`（覆盖率低于 25% 且保留旧快照时为 `true`）、`reputation_published`（本轮是否替换信誉产物）、`rep_dist`（0-25/25-50/50-75/75-100 分桶）、`rep_avg`/`rep_median`、`skipped`（本轮因 time-budget 耗尽而未执行的相位名列表，如 `ip-api geo`/`reputation lookup`；空列表=完整批次，供下游识别降级批）。信誉覆盖率保护是发布保险丝，不是 good 节点筛选条件。
+质量检测汇总（供 stats 消费）：`ts`（完整质量链生成时间戳 ISO-8601）、`total`（代理总数）、`tls`（参与本轮质量检测的键数——quality 链以外部 API 回显判活、不做本地 TLS 握手，故含 validate `--ext-check` 复活的 `method=ext` 键，勿与 `index.json` 的 by_method 口径混用）、`by_type`（IP 类型分布）、`ext_check_total`/`ext_check_ok`（外部 API 检查计数，`ok`=被外检覆盖的 TLS 存活键数 + 外检复活键数）、`country_mismatch`（错区数）、`risk`、`abuse_checked`、`reputation_checked`（最近信誉刷新获分条数）、`reputation_total`（最近信誉刷新候选池条数）、`reputation_ts`（最近信誉刷新尝试时间；不代表信誉快照已发布）、`reputation_coverage`（最近信誉覆盖率）、`reputation_degraded`（信誉刷新覆盖率不足并保留旧快照时为 `true`）、`reputation_published`（最近一轮是否替换信誉产物）、`rep_dist`（0-25/25-50/50-75/75-100 分桶）、`rep_avg`/`rep_median`、`skipped`（完整质量链因 time-budget 耗尽而未执行的相位名列表，如 `ip-api geo`/`reputation lookup`；空列表=完整批次，供下游识别降级批）。信誉覆盖率保护是发布保险丝，不是 good 节点筛选条件。
+
+### `data/quality/reputation_refresh.json`
+
+`.github/workflows/reputation-refresh.yml` 的最近运行审计：`ts`（尝试时间）、`proxy_count`/`unique_exit_ips`（候选节点/出口 IP 数）、`geo_checked`、`risk_signals`、`reputation_checked`、`reputation_coverage`、`reputation_degraded`/`reputation_published`、`sources`/`unavailable_sources`（配置与不可用源）、`exit_ip_sources`（出口地址来自 trace、exit-family、旧缓存或入口 IP 的计数）。即使覆盖率不足也会更新审计及缓存；信誉快照保留上一版，但 good 会基于当前可用数据重建，无信誉记录的节点跳过信誉筛选。
 
 ### `data/quality/abuse.json`
 
@@ -310,13 +320,18 @@ Status 徽章端点数据（shields.io `endpoint` 格式，供 README 徽章与�
 
 ### `data/valid/all_good.txt` 及各目录 `good.txt`
 
-**综合最优清单**（质量 CI 生成，`build_good.py`）：从对应池（根级 `all.txt` / 各国家、集合目录 `all.txt`）中筛选同时满足以下条件的代理：
+**全局清单**（`build-good.yml` 调用 `build_good.py` 生成 `all_good.txt`）：从根级 `all.txt` 中筛选同时满足以下条件的代理：
 
 1. 大陆可达（`china.json` 判定 `reachable`，仅当期可达集，过期历史 `-CN` 不再兜底——与 `all_cn.txt` 同规则，见 `scripts/china_check.py`「严格交战」）
-2. 信誉分 ≥ 80（存在于 `reputation.json` 且 `score >= 80`）
-3. 非高风险（`reputation.json` 的 `risk != high`）
+2. 若有信誉分，分数 ≥ 80（当前 `reputation.json` 分数优先，缺失时用行尾缓存分数）；已知 `risk=high` 排除。两处都没有信誉信息时跳过信誉条件
 
-按综合分降序排列：`round(0.6×信誉分 + 0.2×延迟分 + 0.2×速度分)`；延迟分 ≤100ms 记 100、≥1500ms 记 0 线性递减，速度分 `min(MB/s÷5, 1)×100`，缺失均记 0；同分依次按延迟升序、IP 序。**每一份 `good` 清单都是仅含大陆可达行的 CN 列表，因此全部输出统一渲染 CN 视图**：行内 ms 为大陆实测 RTT、速度 token 改写为 `≈XMB/s` 大陆视角估算（语义同 `all_cn.txt`，`common._rewrite_cn_speed`）；无 `cn_ms` 数据时行保持原样。
+国家与集合的 `good.txt`、`good_ltd.txt` 仍要求 CN 当期可达，并满足欧洲滚动健康门槛：至少 6 个有效测速样本、合格率 ≥90%、连续合格 ≥2 轮、中位速度 ≥5 MB/s、速度 IQR/中位数 ≤0.5。信誉信息存在时，分数门槛为 ≥85 且已知 `risk=high` 排除；完全没有信誉信息时跳过信誉条件，不改变欧洲健康门槛。门槛共用同一 `europe.json` 节点历史。
+
+有信誉分时按 `round(0.6×信誉分 + 0.2×延迟分 + 0.2×速度分)` 排序；无信誉分时延迟与速度各占 50%，未知信誉既不扣分也不加分。延迟分 ≤100ms 记 100、≥1500ms 记 0 线性递减，速度分 `min(MB/s÷5, 1)×100`，缺失均记 0；同分依次按延迟升序、IP 序。good 清单均渲染 CN 视图：行内 ms 为大陆实测 RTT、速度 token 改写为 `≈XMB/s` 大陆视角估算（语义同 `all_cn.txt`，`common._rewrite_cn_speed`）；无 `cn_ms` 数据时行保持原样。
+
+国家/集合节点只有在对应健康历史新鲜（`europe.json` 顶层 `ts` 不超过 8 小时）且自身样本成熟时才进入 `good.txt`；历史缺失、过期或尚未成熟会清除不满足新标准的旧国家/集合 good 项。`all_good.txt` 不受欧洲历史影响，作为旧标准全局基线。
+
+`build-good.yml` 不运行 CN 或信誉检查，也不刷新相关 JSON；它使用仓库中已有的 `china.json` 与 `reputation.json`，每次欧洲检查成功后重建 good。独立的 `reputation-refresh.yml` 每日更新信誉输入；刷新脚本成功后会重建 good，即使本轮信誉覆盖率不足、信誉快照未发布也一样。信誉快照此时沿用旧版；对没有任何信誉记录的节点跳过信誉条件。历史尚未成熟的国家节点仍会被欧洲健康门槛筛掉。
 
 ### `data/valid/all_premium.txt` 及各目录 `premium.txt`
 

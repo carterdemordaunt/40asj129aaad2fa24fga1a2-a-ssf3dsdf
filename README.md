@@ -43,7 +43,7 @@
 
 - **自动抓取整理**：下载上游 `all.json`（失败自动回退 zip）→ 按端口/国家/常用集合/全量多维度汇总，去重合并；并把上游真实出口 IP、ASN、地理等元数据落盘为 `data/quality/upstream_meta.json` 供下游消费
 - **可用性验证**：TLS 握手检测，asyncio 高并发测活，并在判活连接内做**稳态下载测速**（丢弃慢启动爬坡、仅对稳态窗口计时，MB/s）；非限量输出**按延迟升序**，**`_ltd` 限量清单按实测速度取每国最快**
-- **欧洲侧实测清单**（独立 CI）：从 GitHub 托管的 `ubuntu-latest` Runner 对候选逐条执行 TLS 握手和 HTTP GET，以已有测速 `≥5 MB/s` 过滤，并维护滚动稳定性。
+- **欧洲侧实测清单**（独立 CI）：从 GitHub 托管的 `ubuntu-latest` Runner 对候选逐条执行 TLS/HTTP 检查和独立稳态下载测速；滚动记录成功率、中位速度与速度四分位差，输出稳定、可靠和高速清单。
 - **更新差异**：每次更新自动对比上一版，产出 `added`/`removed` 并归档
 - **统计与趋势**：保留历史统计脚本与数据工件；当前节点筛选以 `data/valid/all_eu.txt` 和 `data/valid/all_eu_stable.txt` 为准
 - **结构化索引**：`valid/index.json` 提供每存活代理的延迟与检测方法索引，`valid/speed.json` 提供实测速度索引，便于程序直接消费
@@ -77,6 +77,8 @@ python3 scripts/europe_check.py             # 3. GitHub Runner 欧洲侧 TLS/HTT
 |---|---|---|
 | 欧洲低延迟稳定使用 | `data/valid/all_eu_stable.txt` | GitHub 托管 runner 实测低延迟/速度候选；滚动合格率≥80% 且连续合格≥2轮 |
 | 欧洲当前可达 | `data/valid/all_eu.txt` | 本轮 GitHub Runner TLS + HTTP 检查通过且已有测速达到门槛 |
+| 欧洲可靠节点 | `data/valid/all_eu_quality.txt` | 至少 6 个有效速度样本；合格率≥90%；滚动中位速度≥5 MB/s；速度 IQR/中位数≤50% |
+| 欧洲高速节点 | `data/valid/all_eu_fast.txt` | 可靠节点中的滚动中位速度≥10 MB/s |
 | 未验证全量 | `data/download/all.txt` | 去重清单，IP 数字序 |
 | 程序化消费 | `data/valid/all.json`、`speed.json`、`index.json` | 结构化导出 + 速度/延迟索引 |
 
@@ -95,7 +97,9 @@ data/valid/countries/US/cn4.txt            # 该国大陆可达且出口为 IPv4
 data/valid/countries/US/rep.txt            # 该国按信誉分降序（质量 CI 生成）
 data/valid/all_eu.txt                       # 本轮从欧洲服务器完成 TLS+HTTP 实测可达
 data/valid/all_eu_stable.txt                # 欧洲侧滚动稳定清单（默认至少 3 个样本）
-data/valid/all_good.txt                     # 全局综合最优（CN 可达 + 信誉≥80 + 非高风险，综合分降序，CN 视图）
+data/valid/all_eu_quality.txt               # 至少 6 个有效速度样本、成功率/速度稳定性达标
+data/valid/all_eu_fast.txt                  # all_eu_quality 中滚动中位速度至少 10 MB/s
+data/valid/all_good.txt                     # CN 可达；已知信誉≥80且非高风险，无信誉时跳过
 data/valid/all_premium.txt                  # 全局高端优质（CN 可达 + 信誉≥95 + 真实住宅IP，综合分降序，CN 视图）
 data/valid/all_premium_v4.txt               # 高端优质（出口为 IPv4 的家族分支，另有 _v6 / _46）
 data/valid/countries/US/premium.txt         # 该国高端优质（质量 CI 生成）
@@ -108,15 +112,17 @@ data/valid/sets/hot/all.txt                 # 热门国家集合（验证后）
 data/download/all.txt                       # 全量去重清单（未验证）
 ```
 
-> 欧洲清单的 `5 MB/s` 条件使用验证阶段已有的测速结果；欧洲 Runner 的实时延迟只用于排序，
+> 欧洲清单的 `5 MB/s` 条件使用欧洲 Runner 当轮的稳态下载实测；实时延迟只用于排序，
 > 不作为硬性淘汰条件。
 
 ## 欧洲清单使用
 
-- `data/valid/all_eu.txt`：本轮从 GitHub Runner 完成 TLS + HTTP 实测，且已有测速达到 `5 MB/s`。
+- `data/valid/all_eu.txt`：本轮 TLS + HTTP 检查通过，且从 Runner 实测下载速度达到 `5 MB/s`；行内速度改写为本轮测量值。
 - `data/valid/all_eu_stable.txt`：滚动历史中至少 3 次采样、合格率至少 80%、连续合格至少 2 轮。
+- `data/valid/all_eu_quality.txt`：至少 6 个有效速度样本，滚动合格率至少 90%、连续合格至少 2 轮、中位速度至少 `5 MB/s`，且 `(p75-p25)/p50 <= 0.5`；速度字段写滚动中位数。
+- `data/valid/all_eu_fast.txt`：满足 `all_eu_quality` 条件且滚动中位速度至少 `10 MB/s`。
 - 延迟只用于排序，不设置 TLS 延迟硬阈值；全轮成功率异常过低时保留上一轮结果，避免网络故障清空订阅。
-- CN、good、premium 和 PCB 相关文件仅作为历史数据/代码保留，不再由自动 workflow 维护。
+- CN、premium 和 PCB 相关文件仅作为历史数据/代码保留；good Action 消费仓库中现有的 CN/信誉快照，不刷新这些数据。欧洲测速历史成熟前，旧标准 `all_good.txt` 照常更新，国家/集合 `good.txt` 只收已有成熟健康记录的节点。
 
 ## 文档
 
@@ -130,21 +136,27 @@ data/download/all.txt                       # 全量去重清单（未验证）
 
 ## CI 自动更新
 
-当前自动生产链只有两条：
+当前自动生产链由以下工作流组成：
 
 - `.github/workflows/update-proxies.yml`：每 2 小时下载并验证上游代理，包含补充来源抓取，生成 `data/valid/all_ltd_verified.txt` 等候选文件。
-- `.github/workflows/europe-check.yml`：在 GitHub 托管的 `ubuntu-latest` Runner 上执行 TLS 握手和 HTTP GET，过滤已有测速低于 `5 MB/s` 的节点，维护 `all_eu.txt` 与 `all_eu_stable.txt`。
+- `.github/workflows/europe-check.yml`：在 GitHub 托管的 `ubuntu-latest` Runner 上执行 TLS/HTTP 与稳态下载测速，维护 `all_eu.txt`、`all_eu_stable.txt`、`all_eu_quality.txt`、`all_eu_fast.txt` 和 `data/quality/europe.json` 滚动历史。
+- `.github/workflows/build-good.yml`：欧洲检查成功后调用 `build_good.py` 更新全局 `all_good.txt` 和国家/集合 `good.txt` 与派生文件；国家/集合清单要求欧洲测速历史成熟，缺信誉信息时跳过信誉筛选。也可手动触发。
+- `.github/workflows/reputation-refresh.yml`：每日 04:17 UTC（也可手动触发）刷新出口地理与免密信誉源；刷新成功后重建 good。覆盖率过低时保留上一版信誉快照，缺少信誉信息的节点按可用信誉条件跳过信誉筛选。
 
-欧洲检查的稳定条件是至少 3 次采样、滚动合格率至少 80%、连续合格至少 2 轮。延迟只用于排序，没有 TLS 延迟硬阈值；当整轮成功率异常低时，脚本保留上一轮历史和清单，避免 Runner 网络故障清空订阅。
+欧洲检查的稳定条件是至少 3 次采样、滚动合格率至少 80%、连续合格至少 2 轮；可靠条件更严格，至少 6 个有效速度样本且合格率至少 90%、速度 IQR/中位数不超过 50%。下载测速使用独立 HTTPS 连接，跳过 TCP 慢启动字节后计时；采集间隔超过 12 小时会重置旧滚动样本。延迟只用于排序，没有 TLS 延迟硬阈值。当整轮成功率异常低时，脚本保留上一轮历史和清单，避免 Runner 网络故障清空订阅。
 
-CN、quality、good/premium、出口家族、分类和深测 workflow 已停用，因此不会再触发 reputation/PCB fallback。对应脚本和历史数据暂保留，供历史数据读取与测试使用，但不再是当前发布链的一部分。
+完整的 CN、quality、premium、出口家族、分类和深测 workflow 已停用；独立信誉刷新 workflow 只更新信誉、出口地理和相应 good 产物，不重跑 CN 探测或完整质量链。`build-good.yml` 本身只消费已有快照；国家/集合 `good.txt` 仍要求欧洲稳定测速达标，信誉信息缺失时不会因此排除节点。
 
 ## 目录结构
 
 ```
 .github/workflows/update-proxies.yml     CI 自动更新（下载、验证、提交）
+.github/workflows/europe-check.yml       欧洲 Runner 检查、测速与滚动历史
+.github/workflows/build-good.yml         基于欧洲健康历史重建 good 清单
+.github/workflows/reputation-refresh.yml 每日刷新信誉源并重建 good
 scripts/download_proxies.py              下载与解压整理
 scripts/validate_proxies.py              可用性验证与测速
+scripts/refresh_reputation.py             独立刷新信誉与出口地理快照
 scripts/generate_stats.py                统计与趋势图
 scripts/europe_check.py                  欧洲侧 TLS/HTTP 检查与滚动稳定性
 scripts/common.py                        共享常量与助手（data 布局、HTTP/JSON 探测）
@@ -167,8 +179,9 @@ data/valid/tiers/<tier>/                 speed 分档目录（fast/mid/slow；go
 data/valid/all_ipv4.txt                  出口为 IPv4 的代理清单（exit-family CI，双栈双入）
 data/valid/all_ipv6.txt                  出口为 IPv6 的代理清单（exit-family CI，双栈双入）
 data/valid/all_rep.txt                   信誉排行（按分数降序，质量 CI）
-data/valid/all_good.txt                  综合最优清单（CN 可达 + 信誉≥80 + 非高风险，按综合分降序，质量 CI）
-data/valid/all_good_ltd.txt              每国最快的优质子集（同套 good 标准基于 ltd 限量池筛选 + _verified/_stable）
+data/valid/all_good.txt                  全局清单（CN 可达；已知信誉≥80且非高风险，无信誉时跳过）
+data/valid/countries/<CC>/good.txt       国家清单（CN 可达 + 欧洲健康达标；有信誉时应用信誉规则）
+data/valid/all_good_ltd.txt              旧标准全局 good 的 ltd 子集；国家目录 good_ltd 使用新健康门槛
 data/valid/all_premium.txt               高端优质清单（CN 可达 + 信誉≥95 + 真实住宅IP，按综合分降序，质量 CI）
 data/valid/all_cn.txt                    全量大陆可达清单（全量池，china-check CI）
 data/valid/countries/<CC>/               按国家分组（all.txt、ltd.txt、v4.txt、v6.txt、46.txt、cn.txt、rep.txt、good.txt、good_ltd.txt、premium.txt 等）
@@ -192,6 +205,7 @@ data/quality/reputation.json             信誉分索引（0-100，质量 CI）
 data/quality/reputation_cache.json       信誉信号缓存（7 天 TTL）
 data/quality/external_check.json         外部 API 验证结果
 data/quality/deep_speed.json             深测结果（每周，keyed 含每流明细）
+data/quality/europe.json                 欧洲 Runner 最近 12 轮逐节点连通/速度历史
 data/quality/china.json                  大陆连通性检测明细（keyed，顶层含 ts，china-check CI）
 data/quality/exit_family.json            实际出口家族明细（keyed，含上游交叉验证，顶层含 ts，exit-family CI）
 data/quality/upstream_meta.json          上游 all.json 逐 IP 元数据（真实出口 clientIp / ASN / 地理 / colo）

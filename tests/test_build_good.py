@@ -5,6 +5,7 @@ import re
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
@@ -63,6 +64,10 @@ class TestScores(unittest.TestCase):
         # 0.6*80 + 0.2*50 + 0.2*0 = 58
         self.assertEqual(bg.composite_score(80, 800, None), 58)
 
+    def test_composite_without_reputation_renormalizes_other_weights(self):
+        self.assertEqual(bg.composite_score(None, 100, 5.0), 100)
+        self.assertEqual(bg.composite_score(None, 1500, None), 0)
+
 
 class TestMaps(unittest.TestCase):
     def test_build_rep_map(self):
@@ -72,7 +77,10 @@ class TestMaps(unittest.TestCase):
             "6.6.6.6:443#DE": "garbage",
         }}
         m = bg.build_rep_map(data)
-        self.assertEqual(m, {"1.2.3.4:443#US": {"score": 88, "risk": "low"}})
+        self.assertEqual(m, {
+            "1.2.3.4:443#US": {"score": 88, "risk": "low"},
+            "5.6.7.8:443#JP": {"score": None, "risk": "medium"},
+        })
 
     def test_build_china_set(self):
         """CN 池 = 当期全可达集（清单保持完整，不按延迟精简）。"""
@@ -227,6 +235,79 @@ class TestFilterRank(unittest.TestCase):
         }
         out = bg.filter_rank(lines, china, rep)
         self.assertEqual([l.split(":")[0] for l in out], ["8.0.0.1"])
+
+        strict = bg.filter_rank(
+            lines, china, rep, min_rep_score=bg.HEALTHY_GOOD_MIN_REP_SCORE
+        )
+        self.assertEqual(strict, [])
+
+    def test_health_gate_requires_mature_fast_stable_history(self):
+        line = "8.0.0.1:443#US-100ms-8.00MB/s-CN-90"
+        key = "8.0.0.1:443#US"
+        china = {key}
+        rep = {key: {"score": 90, "risk": "low"}}
+        healthy = {
+            "samples": [1] * 6,
+            "speed_sample_count": 6,
+            "success_pct": 100,
+            "streak": 6,
+            "median_speed_mbps": 8.0,
+            "speed_spread_pct": 0.1,
+        }
+        self.assertEqual(
+            bg.filter_rank(line, china, rep, health_map={key: healthy}), [line]
+        )
+        unstable = {**healthy, "success_pct": 80}
+        self.assertEqual(
+            bg.filter_rank(line, china, rep, health_map={key: unstable}), []
+        )
+        slow = {**healthy, "median_speed_mbps": 4.99}
+        self.assertEqual(
+            bg.filter_rank(line, china, rep, health_map={key: slow}), []
+        )
+        missing_speed_history = {**healthy, "speed_sample_count": 1}
+        self.assertEqual(
+            bg.filter_rank(
+                line, china, rep, health_map={key: missing_speed_history}
+            ),
+            [],
+        )
+
+    def test_missing_reputation_skips_only_reputation_checks(self):
+        lines = (
+            "8.0.0.1:443#US-100ms-8.00MB/s\n"
+            "8.0.0.2:443#US-100ms-8.00MB/s\n"
+            "8.0.0.3:443#US-100ms-8.00MB/s\n"
+            "8.0.0.4:443#US-100ms-8.00MB/s\n"
+        )
+        keys = [f"8.0.0.{i}:443#US" for i in range(1, 5)]
+        healthy = {
+            "samples": [1] * 6,
+            "speed_sample_count": 6,
+            "success_pct": 100,
+            "streak": 6,
+            "median_speed_mbps": 8.0,
+            "speed_spread_pct": 0.1,
+        }
+        health = {key: healthy for key in keys}
+        health[keys[1]] = {**healthy, "median_speed_mbps": 4.9}
+        rep = {
+            keys[2]: {"score": 40, "risk": "low"},
+            keys[3]: {"score": None, "risk": "high"},
+        }
+
+        out = bg.filter_rank(
+            lines, set(keys), rep, health_map=health,
+            min_rep_score=bg.HEALTHY_GOOD_MIN_REP_SCORE,
+        )
+
+        self.assertEqual([bg.line_to_key(line) for line in out], [keys[0]])
+
+    def test_health_history_rejects_stale_or_missing_timestamp(self):
+        now = datetime(2026, 10, 9, 12, tzinfo=timezone.utc)
+        self.assertTrue(bg.health_history_fresh({"ts": "2026-10-09T10:00:00Z"}, now=now))
+        self.assertFalse(bg.health_history_fresh({"ts": "2026-10-09T01:00:00Z"}, now=now))
+        self.assertFalse(bg.health_history_fresh({}, now=now))
 
     def test_tie_breaks_by_latency_then_key(self):
         lines = (
@@ -495,6 +576,40 @@ class TestWriteGoodFiles(unittest.TestCase):
             ver = (valid / "all_good_verified.txt")  # 无 speed.json 数据 → 不生成
             self.assertFalse(ver.exists())
 
+    def test_country_good_requires_europe_health_history(self):
+        lines = (
+            "1.1.1.1:443#US-100ms-8.00MB/s-CN-fast-90\n"
+            "2.2.2.2:443#US-120ms-8.00MB/s-CN-fast-90\n"
+        )
+        keys = {"1.1.1.1:443#US", "2.2.2.2:443#US"}
+        healthy = {
+            "samples": [1] * 6,
+            "speed_sample_count": 6,
+            "success_pct": 100,
+            "streak": 6,
+            "median_speed_mbps": 8.0,
+            "speed_spread_pct": 0.1,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            valid = Path(tmp) / "valid"
+            country = valid / "countries" / "US"
+            country.mkdir(parents=True)
+            (country / "all.txt").write_text(lines, encoding="utf-8")
+
+            bg.write_good_files(
+                valid,
+                keys,
+                {key: {"score": 90, "risk": "low"} for key in keys},
+                health_map={
+                    "1.1.1.1:443#US": healthy,
+                    "2.2.2.2:443#US": {**healthy, "success_pct": 80},
+                },
+            )
+
+            output = (country / "good.txt").read_text(encoding="utf-8")
+            self.assertEqual(len(output.splitlines()), 1)
+            self.assertTrue(output.startswith("1.1.1.1:443#US-"))
+
     def test_idempotent_rewrite(self):
         with tempfile.TemporaryDirectory() as tmp:
             valid = Path(tmp) / "valid"
@@ -550,7 +665,7 @@ class TestWriteGoodFiles(unittest.TestCase):
             self.assertIsInstance(meta["ts"], str)  # ISO 时间戳已落盘
             self.assertGreater(len(meta["ts"]), 10)
 
-    def test_main_preserves_outputs_on_reputation_coverage_collapse(self):
+    def test_main_rebuilds_outputs_on_reputation_coverage_collapse(self):
         with tempfile.TemporaryDirectory() as tmp:
             data_dir = Path(tmp)
             valid = data_dir / "valid"
@@ -565,10 +680,10 @@ class TestWriteGoodFiles(unittest.TestCase):
             stale = valid / "all_good.txt"
             stale.write_text("keep-me\n")
             rc = bg.main(["--data-dir", str(data_dir)])
-            self.assertEqual(rc, 2)
-            self.assertEqual(stale.read_text(), "keep-me\n")
+            self.assertEqual(rc, 0)
+            self.assertFalse(stale.exists())
 
-    def test_main_preserves_outputs_when_quality_meta_marks_degraded_snapshot(self):
+    def test_main_rebuilds_outputs_when_quality_meta_marks_degraded_snapshot(self):
         with tempfile.TemporaryDirectory() as tmp:
             data_dir = Path(tmp)
             valid = data_dir / "valid"
@@ -598,8 +713,70 @@ class TestWriteGoodFiles(unittest.TestCase):
 
             rc = bg.main(["--data-dir", str(data_dir)])
 
-            self.assertEqual(rc, 2)
-            self.assertEqual(stale.read_text(), "keep-me\n")
+            self.assertEqual(rc, 0)
+            self.assertFalse(stale.exists())
+
+    def test_main_includes_unscored_proxy_when_europe_health_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            valid = data_dir / "valid"
+            quality = data_dir / "quality"
+            country = valid / "countries" / "US"
+            country.mkdir(parents=True)
+            quality.mkdir(parents=True)
+            line = "10.0.0.1:443#US-50ms-8.00MB/s\n"
+            (valid / "all.txt").write_text(line, encoding="utf-8")
+            (country / "all.txt").write_text(line, encoding="utf-8")
+            key = "10.0.0.1:443#US"
+            (quality / "china.json").write_text(json.dumps({
+                "proxies": {key: {"verdict": "reachable"}}
+            }), encoding="utf-8")
+            (quality / "europe.json").write_text(json.dumps({
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "proxies": {key: {
+                    "samples": [1] * 6,
+                    "speed_sample_count": 6,
+                    "success_pct": 100,
+                    "streak": 6,
+                    "median_speed_mbps": 8.0,
+                    "speed_spread_pct": 0.1,
+                }},
+            }), encoding="utf-8")
+
+            rc = bg.main(["--data-dir", str(data_dir)])
+
+            self.assertEqual(rc, 0)
+            self.assertEqual((valid / "all_good.txt").read_text(), line)
+            self.assertEqual((country / "good.txt").read_text(), line)
+
+    def test_main_keeps_legacy_all_good_and_clears_unverified_country_good(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            valid = data_dir / "valid"
+            quality = data_dir / "quality"
+            country = valid / "countries" / "US"
+            country.mkdir(parents=True)
+            quality.mkdir(parents=True)
+            line = "10.0.0.1:443#US-50ms-8.00MB/s-CN-90\n"
+            (valid / "all.txt").write_text(line, encoding="utf-8")
+            (country / "all.txt").write_text(line, encoding="utf-8")
+            (country / "good.txt").write_text("unverified-old-node\n")
+            (quality / "china.json").write_text(json.dumps({
+                "proxies": {
+                    "10.0.0.1:443#US": {"verdict": "reachable"}
+                }
+            }))
+            (quality / "reputation.json").write_text(json.dumps({
+                "proxies": {
+                    "10.0.0.1:443#US": {"score": 90, "risk": "low"}
+                }
+            }))
+
+            rc = bg.main(["--data-dir", str(data_dir)])
+
+            self.assertEqual(rc, 0)
+            self.assertEqual((valid / "all_good.txt").read_text(), line)
+            self.assertFalse((country / "good.txt").exists())
 
     def test_main_recovers_deleted_outputs_from_inline_scores(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -618,6 +795,21 @@ class TestWriteGoodFiles(unittest.TestCase):
                     f"10.0.0.{i}:443#US": {"verdict": "reachable"}
                     for i in range(1, 101)
                 }
+            }))
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            (quality / "europe.json").write_text(json.dumps({
+                "ts": now,
+                "proxies": {
+                    f"10.0.0.{i}:443#US": {
+                        "samples": [1] * 6,
+                        "speed_sample_count": 6,
+                        "success_pct": 100,
+                        "streak": 6,
+                        "median_speed_mbps": 5.0,
+                        "speed_spread_pct": 0.1,
+                    }
+                    for i in range(1, 101)
+                },
             }))
             rc = bg.main(["--data-dir", str(data_dir)])
             self.assertEqual(rc, 0)

@@ -5,15 +5,19 @@ Filters the annotated valid pools to proxies that simultaneously satisfy:
 
 1. CN-reachable      — `china.json` verdict == ``reachable``（当期为准；历史性
    ``-CN`` 行备注早随该标注入口移除，不再参与判定）
-2. reputation >= 80  — present in ``reputation.json`` with a score of at
-   least 80, falling back to the last-known score embedded in the validated
-   line when the current public reputation run has only partial coverage
-3. not high risk     — ``reputation.json`` risk != ``high``
+2. reputation        — when available, score >= 80 (85 for country/set lists)
+   and risk != ``high``; when absent, skip reputation-only filtering
+3. country/set good lists additionally require stable and fast history:
+   at least six recent speed samples, >=90% qualified runs, median >=5 MB/s,
+   and interquartile speed spread <=50%
 
-Survivors are ranked by a composite, reputation-weighted score::
+Survivors with reputation are ranked by a composite score::
 
     score = round(0.6 * rep + 0.2 * latency_score + 0.2 * speed_score)
 
+When reputation is absent, the remaining latency and speed weights are
+renormalized to 50% each, so unknown reputation is neither a penalty nor a
+bonus.
 where ``latency_score`` maps <=100ms to 100 and >=1500ms to 0 linearly
 (missing latency counts 0), and ``speed_score = min(MB/s / 5, 1) * 100``
 (missing speed counts 0). Ties break by latency asc then key asc.
@@ -43,7 +47,7 @@ Outputs are the CN-viewed annotated lines:
 
 import argparse
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -54,9 +58,7 @@ from common import (
     DATA_DIR,
     EXIT_FAMILY_FILE,
     LATENCY_RE,
-    MIN_REP_COVERAGE,
     REPUTATION_FILE,
-    QUALITY_META_FILE,
     SPEED_RE,
     cn_fastest_ms,
     line_to_key,
@@ -77,6 +79,13 @@ LATENCY_WORST_MS = 1500
 SPEED_FULL_MBPS = 5.0
 
 MIN_REP_SCORE = 80
+HEALTHY_GOOD_MIN_REP_SCORE = 85
+HEALTH_MIN_SAMPLES = 6
+HEALTH_MIN_SUCCESS_PCT = 90
+HEALTH_MIN_STREAK = 2
+HEALTH_MIN_SPEED_MBPS = 5.0
+HEALTH_MAX_SPEED_SPREAD = 0.5
+HEALTH_MAX_AGE_HOURS = 8
 
 WEIGHT_REP = 0.6
 WEIGHT_LATENCY = 0.2
@@ -120,8 +129,17 @@ def speed_score(mbps: float | None) -> float:
     return min(mbps / SPEED_FULL_MBPS, 1.0) * 100.0
 
 
-def composite_score(rep: int, ms: int | None, mbps: float | None) -> int:
-    """Reputation-weighted composite score (0-100)."""
+def composite_score(rep: int | None, ms: int | None, mbps: float | None) -> int:
+    """Rank by rep/latency/speed, renormalizing when reputation is absent."""
+    if rep is None:
+        remaining_weight = WEIGHT_LATENCY + WEIGHT_SPEED
+        if remaining_weight <= 0:
+            return 0
+        return round(
+            (WEIGHT_LATENCY * latency_score(ms)
+             + WEIGHT_SPEED * speed_score(mbps))
+            / remaining_weight
+        )
     return round(
         WEIGHT_REP * rep
         + WEIGHT_LATENCY * latency_score(ms)
@@ -130,15 +148,20 @@ def composite_score(rep: int, ms: int | None, mbps: float | None) -> int:
 
 
 def build_rep_map(data: dict) -> dict[str, dict]:
-    """``reputation.json`` -> ``{key: {"score": int, "risk": str}}``."""
+    """``reputation.json`` -> per-key score/risk records, including risk-only."""
     result: dict[str, dict] = {}
     for key, entry in data.get("proxies", {}).items():
         if not isinstance(entry, dict):
             continue
         score = entry.get("score")
-        if score is None:
+        risk = entry.get("risk", "")
+        if score is None and not risk:
             continue
-        result[key] = {"score": int(score), "risk": entry.get("risk", "")}
+        try:
+            parsed_score = int(score) if score is not None else None
+        except (TypeError, ValueError):
+            parsed_score = None
+        result[key] = {"score": parsed_score, "risk": risk}
     return result
 
 
@@ -168,9 +191,13 @@ def build_inline_rep_map(text: str) -> dict[str, dict]:
 def merge_rep_maps(
     inline_map: dict[str, dict], current_map: dict[str, dict]
 ) -> dict[str, dict]:
-    """Merge reputation maps with current JSON results taking precedence."""
+    """Merge maps, keeping inline score fallback beside current risk data."""
     merged = dict(inline_map)
-    merged.update(current_map)
+    for key, current in current_map.items():
+        previous = merged.get(key) or {}
+        merged[key] = {**previous, **current}
+        if current.get("score") is None and previous.get("score") is not None:
+            merged[key]["score"] = previous["score"]
     return merged
 
 
@@ -196,6 +223,58 @@ def build_cn_ms_map(data: dict) -> dict[str, float]:
         if ms is not None:
             result[key] = ms
     return result
+
+
+def build_health_map(data: dict) -> dict[str, dict]:
+    """Return rolling runner measurements keyed by normalized proxy key."""
+    result: dict[str, dict] = {}
+    for key, entry in data.get("proxies", {}).items():
+        if isinstance(entry, dict):
+            result[key] = entry
+    return result
+
+
+def is_healthy(key: str, health_map: dict[str, dict] | None) -> bool:
+    """Require mature, reliable, fast and low-variance rolling measurements."""
+    if health_map is None:
+        return True
+    health = health_map.get(key)
+    if not isinstance(health, dict):
+        return False
+    samples = health.get("samples")
+    try:
+        success_pct = float(health.get("success_pct") or 0)
+        streak = int(health.get("streak") or 0)
+        speed_sample_count = int(health.get("speed_sample_count") or 0)
+        median_speed = float(health.get("median_speed_mbps") or 0)
+        spread = float(health["speed_spread_pct"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return bool(
+        isinstance(samples, list)
+        and len(samples) >= HEALTH_MIN_SAMPLES
+        and speed_sample_count >= HEALTH_MIN_SAMPLES
+        and success_pct >= HEALTH_MIN_SUCCESS_PCT
+        and streak >= HEALTH_MIN_STREAK
+        and median_speed >= HEALTH_MIN_SPEED_MBPS
+        and spread <= HEALTH_MAX_SPEED_SPREAD
+    )
+
+
+def health_history_fresh(data: dict, *, now: datetime | None = None) -> bool:
+    """Reject absent or stale health snapshots before they can rewrite good."""
+    stamp = data.get("ts") if isinstance(data, dict) else None
+    if not isinstance(stamp, str):
+        return False
+    try:
+        checked_at = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if checked_at.tzinfo is None:
+        checked_at = checked_at.replace(tzinfo=timezone.utc)
+    now = now or datetime.now(timezone.utc)
+    age = now - checked_at.astimezone(timezone.utc)
+    return timedelta(0) <= age <= timedelta(hours=HEALTH_MAX_AGE_HOURS)
 
 
 def is_cn_reachable(key: str | None, line: str, china_set: set[str]) -> bool:
@@ -229,6 +308,8 @@ def filter_rank(
     china_set: set[str],
     rep_map: dict[str, dict],
     cn_ms: dict[str, float] | None = None,
+    health_map: dict[str, dict] | None = None,
+    min_rep_score: int = MIN_REP_SCORE,
 ) -> list[str]:
     """Filter pool lines by entry criteria and rank by composite score.
 
@@ -244,8 +325,13 @@ def filter_rank(
         key = line_to_key(line)
         if not key or not is_cn_reachable(key, line, china_set):
             continue
+        if not is_healthy(key, health_map):
+            continue
         rep = rep_map.get(key)
-        if not rep or rep["risk"] == "high" or rep["score"] < MIN_REP_SCORE:
+        if rep and rep.get("risk") == "high":
+            continue
+        rep_score = rep.get("score") if rep else None
+        if rep_score is not None and rep_score < min_rep_score:
             continue
         overseas_ms, mbps = parse_metrics(line)
         ms = (
@@ -253,7 +339,7 @@ def filter_rank(
             if cn_ms and key in cn_ms
             else overseas_ms
         )
-        score = composite_score(rep["score"], ms, mbps)
+        score = composite_score(rep_score, ms, mbps)
         ranked.append((score, ms if ms is not None else LATENCY_WORST_MS, key, line))
     ranked.sort(key=lambda item: (-item[0], item[1], item[2]))
     return [line for _s, _ms, _k, line in ranked]
@@ -349,6 +435,7 @@ def write_good_files(
     china_set: set[str],
     rep_map: dict[str, dict],
     cn_ms: dict[str, float] | None = None,
+    health_map: dict[str, dict] | None = None,
 ) -> dict[str, int]:
     """Write all_good.txt + per-country/set good.txt; return per-file counts.
 
@@ -363,7 +450,7 @@ def write_good_files(
       ``sets/<name>.txt``——目录导航式消费入口（空档位整目录跳过）。
 
     对每目录 ``ltd.txt`` 限量池额外产出 ``good_ltd``（每国最快的优质子集）：
-    同套 good 标准在该池上筛选（CN 可达 + 信誉≥80 + 非高风险，综合分降序），
+    同套 good 标准在该池上筛选（CN 可达 + 信誉≥85 + 非高风险 + 健康达标），
     派生 ``_verified`` 与 ``_stable`` 变体，空清单不落盘并清理上轮残留。
     """
     stats: dict[str, int] = {}
@@ -419,7 +506,8 @@ def write_good_files(
         stats["all_good"] = emit(
             valid_dir / "all_good.txt",
             filter_rank(
-                all_pool.read_text(encoding="utf-8"), china_set, rep_map, cn_ms
+                all_pool.read_text(encoding="utf-8"), china_set, rep_map,
+                cn_ms,
             ),
             tier_name="all",
         )
@@ -442,15 +530,18 @@ def write_good_files(
                 vpath.unlink()
         return n
 
-    def rank_ltd(pool: Path) -> list[str]:
+    def rank_ltd(pool: Path, *, require_health: bool = True) -> list[str]:
         if not pool.exists():
             return []
         return filter_rank(
-            pool.read_text(encoding="utf-8"), china_set, rep_map, cn_ms
+            pool.read_text(encoding="utf-8"), china_set, rep_map, cn_ms,
+            health_map if require_health else None,
+            HEALTHY_GOOD_MIN_REP_SCORE if require_health else MIN_REP_SCORE,
         )
 
     stats["all_good_ltd"] = emit_ltd(
-        valid_dir / "all_good_ltd.txt", rank_ltd(valid_dir / "all_ltd.txt")
+        valid_dir / "all_good_ltd.txt",
+        rank_ltd(valid_dir / "all_ltd.txt", require_health=False),
     )
 
     for sub in ("countries", "sets"):
@@ -466,7 +557,8 @@ def write_good_files(
                 stats[name] = emit(
                     group_dir / "good.txt",
                     filter_rank(
-                        pool.read_text(encoding="utf-8"), china_set, rep_map, cn_ms
+                        pool.read_text(encoding="utf-8"), china_set, rep_map,
+                        cn_ms, health_map, HEALTHY_GOOD_MIN_REP_SCORE,
                     ),
                     tier_name=rel,
                 )
@@ -508,13 +600,6 @@ def main(argv: list[str] | None = None) -> int:
         default=DATA_DIR,
         help="data/ root (default: repo-root/data)",
     )
-    ap.add_argument(
-        "--min-rep-coverage",
-        type=float,
-        default=MIN_REP_COVERAGE,
-        help="Refuse to rewrite good outputs when reputation coverage over "
-        "the global pool is below this ratio (default: %(default)s)",
-    )
     args = ap.parse_args(argv)
     valid_dir = args.data_dir / "valid"
     quality_dir = args.data_dir / "quality"
@@ -524,7 +609,15 @@ def main(argv: list[str] | None = None) -> int:
     current_rep_map = build_rep_map(
         read_json(quality_dir / REPUTATION_FILE.name)
     )
-    quality_meta = read_json(quality_dir / QUALITY_META_FILE.name)
+    health_data = read_json(quality_dir / "europe.json")
+    health_map = build_health_map(health_data)
+    if not health_history_fresh(health_data):
+        print(
+            "Europe health history is missing or stale; country/set good lists "
+            "will require new qualifying samples",
+            file=sys.stderr,
+        )
+        health_map = {}
     all_pool = valid_dir / "all.txt"
     all_pool_text = (
         all_pool.read_text(encoding="utf-8") if all_pool.exists() else ""
@@ -537,46 +630,7 @@ def main(argv: list[str] | None = None) -> int:
         f"inline-fallback={len(set(inline_rep_map) - set(current_rep_map))})"
     )
 
-    # Fail closed on a reputation-pipeline collapse.  Empty good results are
-    # normally legitimate and therefore clean up stale files, but a sudden
-    # whole-pool coverage drop (for example the former missing PCB bundle)
-    # must not be interpreted as "every proxy is bad" and delete all public
-    # subscriptions.  Tiny fixture pools stay exempt for local/unit tests.
-    if all_pool.exists():
-        pool_keys = {
-            key
-            for line in all_pool_text.splitlines()
-            if (key := line_to_key(line))
-        }
-        if len(pool_keys) >= 100:
-            # Measure fresh JSON coverage, not the inline last-known cache.
-            # If old good files still exist, a provider outage must preserve
-            # them.  If today's run already deleted the files, however, allow
-            # the inline cache to reconstruct them; otherwise one bad
-            # reputation refresh would make recovery impossible.
-            covered = len(pool_keys & set(current_rep_map))
-            ratio = covered / len(pool_keys)
-            if quality_meta.get("reputation_degraded") is True:
-                checked = quality_meta.get("reputation_checked")
-                total = quality_meta.get("total")
-                if isinstance(checked, int) and isinstance(total, int) and total > 0:
-                    covered = min(checked, len(pool_keys))
-                    ratio = covered / len(pool_keys)
-            existing_good = any(
-                path.is_file()
-                for pattern in ("all_good*.txt", "good*.txt")
-                for path in valid_dir.rglob(pattern)
-            )
-            if ratio < max(0.0, args.min_rep_coverage) and existing_good:
-                print(
-                    "Refusing to rebuild good lists: reputation coverage "
-                    f"{covered}/{len(pool_keys)} ({ratio:.1%}) is below "
-                    f"{args.min_rep_coverage:.1%}; existing outputs preserved",
-                    file=sys.stderr,
-                )
-                return 2
-
-    stats = write_good_files(valid_dir, china_set, rep_map, cn_ms)
+    stats = write_good_files(valid_dir, china_set, rep_map, cn_ms, health_map)
 
     # 出口多样性视图：每出口身份一条，按综合分降序
     if all_pool.exists():
