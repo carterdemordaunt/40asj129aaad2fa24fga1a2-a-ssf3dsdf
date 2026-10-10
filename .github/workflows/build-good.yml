@@ -1,0 +1,46 @@
+name: Build good lists
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Europe reachability check"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: content-data-quality
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    name: Apply Europe health requirements to good lists
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout content branch
+        uses: actions/checkout@v7
+        with:
+          ref: content
+
+      - name: Mark job start
+        run: touch .jobstart
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Test good list builder
+        run: python -m unittest tests.test_build_good -q
+
+      - name: Build good lists
+        id: good
+        run: python scripts/build_good.py
+
+      - name: Commit good outputs
+        if: steps.good.outcome == 'success'
+        run: |
+          bash .github/scripts/commit_data.sh "chore(data): rebuild good lists with Europe health checks ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
