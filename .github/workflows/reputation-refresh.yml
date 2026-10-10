@@ -23,6 +23,9 @@ jobs:
         with:
           ref: content
 
+      - name: Mark job start
+        run: touch .jobstart
+
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
