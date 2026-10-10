@@ -907,8 +907,15 @@ class TestCommittedCnViewInvariant(unittest.TestCase):
                 out.append(path)
                 continue
             # 子目录 CN 视图（countries/*/cn*.txt、sets/*/cn*.txt）同属
-            # CN 视图语义（≈XMB/s 或无速度），R299 纳入护栏。
-            if path.name.startswith("cn"):
+            # CN 视图语义（≈XMB/s 或无速度），R299 纳入护栏。按目录位置
+            # 判断，避免把 tiers/*/sets/cn_common.txt 这类合法 good 集合
+            # 镜像误当成 CN 视图。
+            relative_parts = path.relative_to(valid).parts
+            if (
+                len(relative_parts) >= 3
+                and relative_parts[0] in ("countries", "sets")
+                and path.name.startswith("cn")
+            ):
                 out.append(path)
                 continue
             if "tiers" in path.parts and "premium" in path.name:
