@@ -51,7 +51,7 @@ jobs:
           python scripts/europe_check.py
           --source data/valid/all.txt
           --workers 400 --timeout 3
-          --speed-budget 1800 --speed-workers 20
+          --speed-budget 5400 --speed-workers 20
           --run-timeout 1500
           --min-speed-mbps 2
 
