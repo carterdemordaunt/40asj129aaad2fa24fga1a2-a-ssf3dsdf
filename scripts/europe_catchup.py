@@ -8,12 +8,12 @@ import json
 import math
 import os
 import subprocess
+import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 from build_good import HEALTH_MIN_SAMPLES, build_health_map, is_healthy
-from common import DATA_DIR, line_to_key, read_json
+from common import DATA_DIR, line_to_key
 from europe_check import select_speed_keys
 from europe_health import SAMPLE_MAX_AGE_DAYS, is_fresh, parse_timestamp
 
@@ -24,6 +24,8 @@ DEADLINE = parse_timestamp("2026-10-15T15:30:00Z")
 LAST_START = DEADLINE - timedelta(minutes=30)
 MAX_MANUAL_BATCHES = 28
 ACTIVE = {"queued", "in_progress", "requested", "waiting", "pending"}
+TERMINAL = {"stop", "fail"}
+DISPATCH_GRACE = timedelta(minutes=5)
 
 
 def recent_runs(runs: list[dict]) -> list[dict]:
@@ -40,6 +42,7 @@ def coverage(source: str, history: dict, good_text: str, *, now: datetime) -> di
     candidates, missing, histogram = {}, set(), Counter()
     cooling_until = []
     tested_today = unavailable = unknown = too_late = attempts = succeeded = healthy = 0
+    missing_samples = untested_today = no_valid = mature = mature_rejected = 0
     for key in keys:
         state = states.get(key, {})
         if not isinstance(state, dict):
@@ -60,16 +63,24 @@ def coverage(source: str, history: dict, good_text: str, *, now: datetime) -> di
                 attempts += 1
                 succeeded += ok
         histogram[str(min(valid, HEALTH_MIN_SAMPLES))] += 1
-        healthy += is_healthy(key, health, now=now)
+        qualified = is_healthy(key, health, now=now)
+        healthy += qualified
+        if available:
+            last_speed = parse_timestamp(state.get("last_speed_at"))
+            untested_today += last_speed is None or last_speed < DAY_START
+            no_valid += valid == 0
+            mature += valid >= HEALTH_MIN_SAMPLES
+            mature_rejected += valid >= HEALTH_MIN_SAMPLES and not qualified
         candidates[key] = {"available": available or not probe_at}
         if candidates[key]["available"] and valid < HEALTH_MIN_SAMPLES:
             missing.add(key)
+            missing_samples += HEALTH_MIN_SAMPLES - valid
             last = parse_timestamp(state.get("last_speed_at"))
             first_due = max(now, last + timedelta(hours=2)) if last else now
             if first_due > now:
                 cooling_until.append(first_due)
             earliest = first_due + timedelta(hours=2 * (HEALTH_MIN_SAMPLES - valid - 1))
-            too_late += earliest > DEADLINE
+            too_late += earliest >= LAST_START
     due = select_speed_keys(candidates, history, budget=len(keys), now=now)
     good_keys = {key for line in good_text.splitlines() if (key := line_to_key(line))}
     return {
@@ -79,8 +90,14 @@ def coverage(source: str, history: dict, good_text: str, *, now: datetime) -> di
         "available": sum(state.get("last_available") is True for key, state in states.items() if key in keys),
         "unavailable": unavailable,
         "unknown": unknown,
+        "available_not_speed_tested_today": untested_today,
+        "available_without_valid_speed_samples": no_valid,
+        "available_with_6_valid_samples": mature,
+        "available_sample_mature_but_not_good": mature_rejected,
         "valid_sample_histogram_6_means_at_least_6": dict(sorted(histogram.items())),
         "available_or_unknown_below_6_valid_samples": len(missing),
+        "minimum_missing_valid_samples_available_or_unknown": missing_samples,
+        "minimum_additional_full_5400_batches": math.ceil(missing_samples / 5400),
         "deficient_nodes_due_now": sum(key in missing for key in due),
         "all_nodes_due_now": len(due),
         "next_deficient_node_due_at": min(cooling_until).isoformat() if cooling_until else None,
@@ -150,47 +167,126 @@ def gh_runs(workflow: str) -> list[dict]:
 
 
 def publish(plan: dict, report: dict, runs: list[dict]) -> None:
-    payload = {**plan, "coverage": report, "recent_actions": runs[:8]}
+    complete = (report.get("available_or_unknown_below_6_valid_samples") == 0
+                and report.get("good_status", {}).get("status") == "built"
+                and report.get("good_status", {}).get("health_ts") == report.get("health_ts")
+                and report.get("latest_successful_europe_run_published", True))
+    outcome = ("failed" if plan["action"] == "fail" else
+               "complete" if plan["action"] == "stop" and complete else
+               "partial" if plan["action"] == "stop" else "running")
+    payload = {**plan, "outcome": outcome, "coverage": report, "recent_actions": runs[:8]}
     rendered = json.dumps(payload, indent=2, ensure_ascii=True)
     print(rendered)
     if path := os.environ.get("GITHUB_STEP_SUMMARY"):
-        with open(path, "a", encoding="utf-8") as stream:
+        with open(path, "w", encoding="utf-8") as stream:
             stream.write("## Europe catch-up: 2026-10-15\n\n")
             stream.write(f"**{plan['action']}**: {plan['reason']}\n\n```json\n{rendered}\n```\n")
     if path := os.environ.get("GITHUB_OUTPUT"):
         with open(path, "a", encoding="utf-8") as stream:
-            stream.write(f"stop={'true' if plan['action'] in ('stop', 'fail') else 'false'}\n")
+            stream.write(f"stop={'true' if plan['action'] in TERMINAL else 'false'}\n")
+
+
+def load_report(*, now: datetime, refresh: bool) -> dict:
+    if refresh:
+        # Read one fetched commit, not the checkout from hours before this poll.
+        subprocess.run(["git", "fetch", "--no-tags", "origin", "content:refs/remotes/origin/content"],
+                       check=True, timeout=60)
+        revision = subprocess.check_output(["git", "rev-parse", "origin/content"], text=True, timeout=15).strip()
+
+        def read(path: str) -> str:
+            return subprocess.check_output(["git", "show", f"{revision}:data/{path}"],
+                                           timeout=30).decode("utf-8-sig")
+    else:
+        def read(path: str) -> str:
+            return (DATA_DIR / path).read_text(encoding="utf-8-sig")
+
+    report = coverage(read("valid/all.txt"), json.loads(read("quality/europe.json")),
+                      read("valid/all_good.txt"), now=now)
+    report["good_status"] = json.loads(read("quality/good_status.json"))
+    report["good_meta"] = json.loads(read("quality/good_meta.json"))
+    return report
+
+
+def dispatch(workflow: str) -> None:
+    command = ["gh", "workflow", "run", workflow, "--repo", REPO, "--ref", "main"]
+    if workflow == "europe-check.yml":
+        command += ["--field", "speed_target_samples=6"]
+    subprocess.run(command, check=True, timeout=45)
+
+
+def run_iteration(*, execute: bool, refresh: bool, pending: dict | None = None) -> tuple:
+    europe, good = gh_runs("europe-check.yml"), gh_runs("build-good.yml")
+    now = datetime.now(timezone.utc)
+    report = load_report(now=now, refresh=refresh)
+    status = report["good_status"]
+    plan = decide(report, status, europe, good, now=now)
+    completed = [run for run in recent_runs(europe) if run.get("conclusion") == "success"]
+    report["latest_successful_europe_run_published"] = not completed or (
+        max(parse_timestamp(run["createdAt"]) for run in completed) <= parse_timestamp(report["health_ts"]))
+    if (plan["action"] != "fail" and now < DEADLINE
+            and not report["latest_successful_europe_run_published"]):
+        plan = {"action": "fail", "reason": "Published Europe history is older than a successful run; refusing stale decisions"}
+    if pending and plan["action"] not in TERMINAL:
+        runs = europe if pending["workflow"] == "europe-check.yml" else good
+        observed = [run for run in runs if run.get("event") == "workflow_dispatch"
+                    and run.get("databaseId") not in pending["known_ids"]]
+        if observed:
+            pending = None
+        elif now - pending["sent_at"] >= DISPATCH_GRACE:
+            plan = {"action": "fail", "reason": "Dispatched Action did not appear within five minutes; no duplicate retry"}
+        else:
+            plan = {"action": "wait", "reason": "Wait for the dispatched Action to appear; do not dispatch twice"}
+    if plan["action"] in ("europe", "build") and execute:
+        # Recheck both lists, including completed runs, before using the snapshot.
+        if gh_runs("europe-check.yml") != europe or gh_runs("build-good.yml") != good:
+            plan = {"action": "wait", "reason": "Action state changed during this poll; refresh before dispatch"}
+        else:
+            checked_at = datetime.now(timezone.utc)
+            current = decide(report, status, europe, good, now=checked_at)
+            if current["action"] != plan["action"]:
+                plan = current
+            else:
+                workflow = "europe-check.yml" if plan["action"] == "europe" else "build-good.yml"
+                runs = europe if plan["action"] == "europe" else good
+                dispatch(workflow)
+                pending = {"workflow": workflow, "sent_at": checked_at,
+                           "known_ids": {run["databaseId"] for run in runs}}
+    return plan, report, europe + good, pending
+
+
+def watch(*, poll_seconds: float, session_seconds: float) -> int:
+    started = time.monotonic()
+    pending = None
+    while True:
+        plan, report, runs, pending = run_iteration(execute=True, refresh=True, pending=pending)
+        publish(plan, report, runs)
+        if plan["action"] in TERMINAL:
+            return int(plan["action"] == "fail")
+        if time.monotonic() - started >= session_seconds and pending is None:
+            publish({"action": "yield", "reason": "Continue in the next serial GitHub job before the hosted-job time limit"},
+                    report, runs)
+            return 0
+        remaining = (DEADLINE - datetime.now(timezone.utc)).total_seconds()
+        time.sleep(max(1, min(poll_seconds, remaining)))
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--execute", action="store_true", help="Dispatch only inside this repository's GitHub Action")
+    ap.add_argument("--watch", action="store_true", help="Keep coordinating inside a bounded GitHub job")
+    ap.add_argument("--poll-seconds", type=float, default=60)
+    ap.add_argument("--session-seconds", type=float, default=5 * 60 * 60)
     args = ap.parse_args(argv)
     if args.execute and (os.environ.get("GITHUB_ACTIONS") != "true" or os.environ.get("GITHUB_REPOSITORY") != REPO):
         raise RuntimeError("Execution is restricted to the intended GitHub repository")
-    now = datetime.now(timezone.utc)
-    source = (DATA_DIR / "valid" / "all.txt").read_text(encoding="utf-8")
-    good_file = DATA_DIR / "valid" / "all_good.txt"
-    report = coverage(source, read_json(DATA_DIR / "quality" / "europe.json"),
-                      good_file.read_text(encoding="utf-8") if good_file.exists() else "", now=now)
-    status = read_json(DATA_DIR / "quality" / "good_status.json")
-    report["good_status"] = status
-    report["good_meta"] = read_json(DATA_DIR / "quality" / "good_meta.json")
-    europe, good = gh_runs("europe-check.yml"), gh_runs("build-good.yml")
-    plan = decide(report, status, europe, good, now=now)
-    publish(plan, report, europe + good)
-    if plan["action"] in ("europe", "build") and args.execute:
-        # Recheck just before dispatch to close the checkout/API polling race.
-        current = decide(report, status, gh_runs("europe-check.yml"), gh_runs("build-good.yml"),
-                         now=datetime.now(timezone.utc))
-        if current["action"] != plan["action"]:
-            publish(current, report, [])
-            return int(current["action"] == "fail")
-        workflow = "europe-check.yml" if plan["action"] == "europe" else "build-good.yml"
-        command = ["gh", "workflow", "run", workflow, "--repo", REPO, "--ref", "main"]
-        if plan["action"] == "europe":
-            command += ["--field", "speed_target_samples=6"]
-        subprocess.run(command, check=True, timeout=45)
+    if args.watch and not args.execute:
+        ap.error("--watch requires --execute inside the intended GitHub repository")
+    if not 15 <= args.poll_seconds <= 60 or not 0 < args.session_seconds <= 5 * 60 * 60:
+        ap.error("poll interval must be 15-60 seconds and each session at most five hours")
+    if args.watch:
+        return watch(poll_seconds=args.poll_seconds, session_seconds=args.session_seconds)
+    plan, report, runs, _pending = run_iteration(execute=args.execute, refresh=args.execute)
+    publish(plan, report, runs)
     return int(plan["action"] == "fail")
 
 
