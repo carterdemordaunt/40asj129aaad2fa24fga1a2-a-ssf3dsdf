@@ -2,11 +2,6 @@ name: Europe one-day sampling catch-up
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "*/5 * * * *"
-  workflow_run:
-    workflows: ["Europe reachability check", "Build good lists"]
-    types: [completed]
 
 permissions:
   contents: read
@@ -18,9 +13,15 @@ concurrency:
 
 jobs:
   coordinate:
+    name: Coordinate bounded slice ${{ matrix.slice }}
     if: github.repository == 'carterdemordaunt/40asj129aaad2fa24fga1a2-a-ssf3dsdf'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 330
+    strategy:
+      fail-fast: true
+      max-parallel: 1
+      matrix:
+        slice: [1, 2, 3]
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -39,7 +40,7 @@ jobs:
 
       - name: Continue due sampling or finalize today's report
         id: plan
-        run: python scripts/europe_catchup.py --execute
+        run: python -u scripts/europe_catchup.py --execute --watch
 
       - name: Disable this temporary workflow on completion, expiry or failure
         if: always() && (failure() || steps.plan.outputs.stop == 'true')
