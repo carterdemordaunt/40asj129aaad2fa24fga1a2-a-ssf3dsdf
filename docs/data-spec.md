@@ -268,7 +268,7 @@ Status 徽章端点数据（shields.io `endpoint` 格式，供 README 徽章与�
 
 ### `data/quality/europe.json` 与欧洲质量清单
 
-`europe.json` 由 `europe_check.py` 写入，顶层 `{schema_version: 2, ts, vantage, window, coverage, proxies}`。每轮对 `all.txt` 全量轻量探测，再按最久未测速优先分配最多 1,800 次独立 HTTPS 下载。`coverage` 记录候选数、实际探测数、HTTP 可用数、测速数及成功数、两阶段耗时、新鲜/未测/过期测速数和输出数。默认每节点两类窗口各保留最多 12 个样本；测速样本另按 14 天淘汰，不再因全局采集断档清空历史。
+`europe.json` 由 `europe_check.py` 写入，顶层 `{schema_version: 2, ts, vantage, window, coverage, proxies}`。每轮对 `all.txt` 全量轻量探测，再按最久未测速优先分配最多 5,400 次独立 HTTPS 下载。`coverage` 记录候选数、实际探测数、HTTP 可用数、测速数及成功数、两阶段耗时、新鲜/未测/过期测速数和输出数。默认每节点两类窗口各保留最多 12 个样本；测速样本另按 14 天淘汰，不再因全局采集断档清空历史。
 
 `proxies[key]` 包含 `availability_samples`（HTTP 状态及首字节成功的 0/1 序列）、`latency_samples`、`reachable_pct`、`availability_streak`、`last_available`、`last_probe_at`；测速单独记录 `speed_samples`（失败为 null）、`speed_sample_times`、`samples`（各次实际测速达到门槛的 0/1 序列）、`sample_count`（测速尝试数）、`speed_sample_count`（有效测速数）、`success_pct`、`streak`/`fail_streak`、`last_speed_at`、`last_speed_mbps` 和 `speed_error`。未轮到测速不追加任何测速样本，不改变测速合格率或连续次数。`last_check` 保留为可用性检测时间的兼容字段，不能用于刷新测速时效。中位速度、p25/p75、`speed_spread_pct=(p75-p25)/median` 由有效速度样本计算；独立下载仍排除 TCP 慢启动数据。旧版 JSON 通过原有 `last_check`/`ts` 迁移，不把旧测量改成当前时间。
 

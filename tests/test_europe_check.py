@@ -304,9 +304,10 @@ class TestEuropeCheck(unittest.TestCase):
 
     def test_default_source_is_full_pool(self):
         self.assertEqual(ec.DEFAULT_SOURCE, ROOT / "data" / "valid" / "all.txt")
+        self.assertEqual(ec.DEFAULT_SPEED_BUDGET, 5400)
         workflow = (ROOT / ".github/workflows/europe-check.yml").read_text(encoding="utf-8")
         self.assertIn("--source data/valid/all.txt", workflow)
-        self.assertIn("--speed-budget 1800", workflow)
+        self.assertIn(f"--speed-budget {ec.DEFAULT_SPEED_BUDGET}", workflow)
 
     def test_unscheduled_speed_keeps_history_without_extending_speed_age(self):
         history = {}
