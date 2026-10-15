@@ -289,6 +289,7 @@ async def probe_all(
 def select_speed_keys(
     results: dict[str, dict], previous: dict, *, budget: int,
     now: datetime, interval_hours: float = DEFAULT_SPEED_INTERVAL_HOURS,
+    target_samples: int = 0,
 ) -> list[str]:
     """Oldest first; hashed ties avoid bias towards source order/country."""
     old = previous.get("proxies", {})
@@ -299,6 +300,16 @@ def select_speed_keys(
             continue
         state = old.get(key)
         state = state if isinstance(state, dict) else {}
+        if target_samples:
+            speeds = state.get("speed_samples") or []
+            stamps = state.get("speed_sample_times") or [state.get("last_speed_at")] * len(speeds)
+            valid_count = sum(
+                isinstance(speed, (int, float)) and math.isfinite(speed) and speed > 0
+                and is_fresh(stamp, SAMPLE_MAX_AGE_DAYS * 24, now=now)
+                for speed, stamp in zip(speeds, stamps)
+            )
+            if valid_count >= target_samples:
+                continue
         stamp = state.get("last_speed_at", state.get("last_check", previous.get("ts")))
         if not state.get("speed_samples"):
             stamp = None
@@ -620,6 +631,7 @@ async def run(args: argparse.Namespace) -> int:
     speed_keys = select_speed_keys(
         results, previous, budget=args.speed_budget,
         now=parse_timestamp(utc_now()), interval_hours=args.speed_interval_hours,
+        target_samples=args.speed_target_samples,
     )
     availability_seconds = round(time.monotonic() - started, 2)
     print(
@@ -765,6 +777,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--speed-budget", type=int, default=DEFAULT_SPEED_BUDGET,
                     help="Maximum downloads per run (0 = availability only)")
     ap.add_argument("--speed-workers", type=int, default=DEFAULT_SPEED_WORKERS)
+    ap.add_argument("--speed-target-samples", type=int, default=0,
+                    help="Opt-in catch-up: skip downloads with this many valid recent samples (0 = normal rotation)")
     ap.add_argument("--speed-interval-hours", type=float, default=DEFAULT_SPEED_INTERVAL_HOURS,
                     help="Do not repeat a speed measurement inside this interval")
     ap.add_argument("--run-timeout", type=float, default=25 * 60,
@@ -818,7 +832,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Maximum lines in each Europe subscription (0 = unlimited)",
     )
     args = ap.parse_args(argv)
-    if args.speed_budget < 0 or args.speed_interval_hours < 0 or args.history_window < 1:
+    if args.speed_budget < 0 or args.speed_target_samples < 0 or args.speed_interval_hours < 0 or args.history_window < 1:
         ap.error("speed budget/interval must be nonnegative and history window must be positive")
     if min(args.workers, args.speed_workers, args.timeout, args.run_timeout) <= 0:
         ap.error("workers and timeouts must be positive")

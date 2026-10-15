@@ -1,0 +1,48 @@
+name: Europe one-day sampling catch-up
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_run:
+    workflows: ["Europe reachability check", "Build good lists"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: europe-catchup-2026-10-15
+  cancel-in-progress: false
+
+jobs:
+  coordinate:
+    if: github.repository == 'carterdemordaunt/40asj129aaad2fa24fga1a2-a-ssf3dsdf'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout content scripts and measurements
+        uses: actions/checkout@v7
+        with:
+          ref: content
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Test the bounded coordinator
+        run: python -m unittest tests.test_europe_catchup -q
+
+      - name: Continue due sampling or finalize today's report
+        id: plan
+        run: python scripts/europe_catchup.py --execute
+
+      - name: Disable this temporary workflow on completion, expiry or failure
+        if: always() && (failure() || steps.plan.outputs.stop == 'true')
+        run: >-
+          gh workflow disable europe-catchup.yml
+          --repo carterdemordaunt/40asj129aaad2fa24fga1a2-a-ssf3dsdf

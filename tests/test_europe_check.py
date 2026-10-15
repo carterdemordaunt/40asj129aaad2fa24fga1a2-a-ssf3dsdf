@@ -21,6 +21,21 @@ class TestEuropeCheck(unittest.TestCase):
         self.assertEqual(ec.parse_endpoint(self.LINE), (self.KEY, "1.2.3.4", 443))
         self.assertIsNone(ec.parse_endpoint("broken"))
 
+    def test_opt_in_catchup_skips_mature_nodes_but_keeps_failures_and_cooldown(self):
+        now = datetime(2026, 10, 15, 5, tzinfo=timezone.utc)
+        old = "2026-10-15T01:00:00Z"
+        recent = "2026-10-15T04:30:00Z"
+        results = {key: {"available": True} for key in ("mature", "failed", "cooling", "stale")}
+        history = {"proxies": {
+            "mature": {"speed_samples": [3.0] * 6, "speed_sample_times": [old] * 6, "last_speed_at": old},
+            "failed": {"speed_samples": [3.0] * 5 + [None], "speed_sample_times": [old] * 6, "last_speed_at": old},
+            "cooling": {"speed_samples": [None], "speed_sample_times": [recent], "last_speed_at": recent},
+            "stale": {"speed_samples": [3.0] * 6, "speed_sample_times": ["2026-09-01T00:00:00Z"] * 6,
+                      "last_speed_at": "2026-09-01T00:00:00Z"},
+        }}
+        self.assertEqual(set(ec.select_speed_keys(results, history, budget=10, now=now)), {"mature", "failed", "stale"})
+        self.assertEqual(set(ec.select_speed_keys(results, history, budget=10, now=now, target_samples=6)), {"failed", "stale"})
+
     def test_history_promotes_after_stable_runs(self):
         history = {}
         result = {
