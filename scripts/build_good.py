@@ -33,7 +33,7 @@ Outputs are the Europe-viewed annotated lines:
 
 import argparse
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -59,6 +59,7 @@ from common import (
     write_json,
     write_text_if_changed,
 )
+from europe_health import PROBE_MAX_AGE_HOURS, is_fresh, node_is_fresh
 
 LATENCY_BEST_MS = 100
 LATENCY_WORST_MS = 1500
@@ -71,7 +72,7 @@ HEALTH_MIN_SUCCESS_PCT = 90
 HEALTH_MIN_STREAK = 2
 HEALTH_MIN_SPEED_MBPS = 2.0
 HEALTH_MAX_SPEED_SPREAD = 0.5
-HEALTH_MAX_AGE_HOURS = 8
+HEALTH_MAX_AGE_HOURS = PROBE_MAX_AGE_HOURS
 
 WEIGHT_REP = 0.6
 WEIGHT_LATENCY = 0.2
@@ -214,18 +215,35 @@ def build_cn_ms_map(data: dict) -> dict[str, float]:
 def build_health_map(data: dict) -> dict[str, dict]:
     """Return rolling runner measurements keyed by normalized proxy key."""
     result: dict[str, dict] = {}
-    for key, entry in data.get("proxies", {}).items():
+    proxies = data.get("proxies", {})
+    if not isinstance(proxies, dict):
+        return result
+    for key, entry in proxies.items():
         if isinstance(entry, dict):
-            result[key] = entry
+            state = dict(entry)
+            if data.get("schema_version", 1) == 1:
+                # Legacy snapshots sampled availability and speed together.
+                stamp = state.get("last_check", data.get("ts"))
+                state.setdefault("last_probe_at", stamp)
+                state.setdefault("last_speed_at", stamp)
+                availability = state.get("availability_samples") or state.get("samples") or []
+                state.setdefault("last_available", bool(availability and availability[-1]))
+                state.setdefault("reachable_pct", state.get("success_pct", 0))
+                state.setdefault("availability_streak", state.get("streak", 0))
+            result[key] = state
     return result
 
 
-def is_healthy(key: str, health_map: dict[str, dict] | None) -> bool:
+def is_healthy(
+    key: str, health_map: dict[str, dict] | None, *, now: datetime | None = None,
+) -> bool:
     """Require mature, reliable, fast and low-variance rolling measurements."""
     if health_map is None:
         return True
     health = health_map.get(key)
     if not isinstance(health, dict):
+        return False
+    if not node_is_fresh(health, now=now or datetime.now(timezone.utc)):
         return False
     samples = health.get("samples")
     try:
@@ -234,6 +252,8 @@ def is_healthy(key: str, health_map: dict[str, dict] | None) -> bool:
         speed_sample_count = int(health.get("speed_sample_count") or 0)
         median_speed = float(health.get("median_speed_mbps") or 0)
         spread = float(health["speed_spread_pct"])
+        reachable_pct = float(health.get("reachable_pct") or 0)
+        availability_streak = int(health.get("availability_streak") or 0)
     except (KeyError, TypeError, ValueError):
         return False
     return bool(
@@ -244,23 +264,16 @@ def is_healthy(key: str, health_map: dict[str, dict] | None) -> bool:
         and streak >= HEALTH_MIN_STREAK
         and median_speed >= HEALTH_MIN_SPEED_MBPS
         and spread <= HEALTH_MAX_SPEED_SPREAD
+        and bool(health.get("last_available"))
+        and reachable_pct >= HEALTH_MIN_SUCCESS_PCT
+        and availability_streak >= HEALTH_MIN_STREAK
     )
 
 
 def health_history_fresh(data: dict, *, now: datetime | None = None) -> bool:
     """Reject absent or stale health snapshots before they can rewrite good."""
     stamp = data.get("ts") if isinstance(data, dict) else None
-    if not isinstance(stamp, str):
-        return False
-    try:
-        checked_at = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
-    except ValueError:
-        return False
-    if checked_at.tzinfo is None:
-        checked_at = checked_at.replace(tzinfo=timezone.utc)
-    now = now or datetime.now(timezone.utc)
-    age = now - checked_at.astimezone(timezone.utc)
-    return timedelta(0) <= age <= timedelta(hours=HEALTH_MAX_AGE_HOURS)
+    return is_fresh(stamp, HEALTH_MAX_AGE_HOURS, now=now or datetime.now(timezone.utc))
 
 
 def is_cn_reachable(key: str | None, line: str, china_set: set[str]) -> bool:
@@ -587,13 +600,39 @@ def main(argv: list[str] | None = None) -> int:
     )
     health_data = read_json(quality_dir / "europe.json")
     health_map = build_health_map(health_data)
+    now = datetime.now(timezone.utc)
+    preserve_reason = None
     if not health_history_fresh(health_data):
+        preserve_reason = "health_snapshot_missing_or_stale"
+    elif not health_map or not any(
+        is_fresh(state.get("last_probe_at"), HEALTH_MAX_AGE_HOURS, now=now)
+        for state in health_map.values()
+    ):
+        preserve_reason = "no_fresh_availability_measurements"
+    elif not any(
+        node_is_fresh(state, now=now)
+        and len(state.get("samples") or []) >= HEALTH_MIN_SAMPLES
+        and (
+            len(state.get("availability_samples") or []) >= HEALTH_MIN_STREAK
+            or (health_data.get("schema_version", 1) == 1 and int(state.get("streak") or 0) >= HEALTH_MIN_STREAK)
+        )
+        for state in health_map.values()
+    ):
+        preserve_reason = "speed_history_stale_or_warming_up"
+    if preserve_reason:
         print(
-            "Europe health history is missing or stale; all good lists "
-            "will require new qualifying samples",
+            f"::warning::Good build skipped ({preserve_reason}); "
+            "previous outputs and good_meta timestamp were preserved",
             file=sys.stderr,
         )
-        health_map = {}
+        write_json(quality_dir / "good_status.json", {
+            "ts": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "status": "preserved",
+            "reason": preserve_reason,
+            "health_ts": health_data.get("ts"),
+            "output_ts": read_json(quality_dir / "good_meta.json").get("ts"),
+        })
+        return 0
     all_pool = valid_dir / "all.txt"
     all_pool_text = (
         all_pool.read_text(encoding="utf-8") if all_pool.exists() else ""
@@ -631,6 +670,11 @@ def main(argv: list[str] | None = None) -> int:
             "proxy_count": total,
         },
     )
+    write_json(quality_dir / "good_status.json", {
+        "ts": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "status": "built",
+        "health_ts": health_data.get("ts"),
+    })
     print(f"Done: {len(stats)} files, {total} proxies")
     return 0
 

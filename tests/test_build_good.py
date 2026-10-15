@@ -5,7 +5,7 @@ import re
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
@@ -13,8 +13,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import build_good as bg
 
 
+def fresh_availability() -> dict:
+    stamp = datetime.now(timezone.utc).isoformat()
+    return {
+        "last_probe_at": stamp,
+        "last_speed_at": stamp,
+        "last_available": True,
+        "reachable_pct": 100,
+        "availability_streak": 6,
+        "availability_samples": [1] * 6,
+    }
+
+
 def healthy_map(text: str, *, median_speed_mbps: float = 8.0) -> dict[str, dict]:
     state = {
+        **fresh_availability(),
         "samples": [1] * 6,
         "speed_sample_count": 6,
         "success_pct": 100,
@@ -263,6 +276,7 @@ class TestFilterRank(unittest.TestCase):
         china = {key}
         rep = {key: {"score": 90, "risk": "low"}}
         healthy = {
+            **fresh_availability(),
             "samples": [1] * 6,
             "speed_sample_count": 6,
             "success_pct": 100,
@@ -296,6 +310,7 @@ class TestFilterRank(unittest.TestCase):
         )
         keys = [f"8.0.0.{i}:443#US" for i in range(1, 5)]
         healthy = {
+            **fresh_availability(),
             "samples": [1] * 6,
             "speed_sample_count": 6,
             "success_pct": 100,
@@ -627,6 +642,7 @@ class TestWriteGoodFiles(unittest.TestCase):
         )
         keys = {"1.1.1.1:443#US", "2.2.2.2:443#US"}
         healthy = {
+            **fresh_availability(),
             "samples": [1] * 6,
             "speed_sample_count": 6,
             "success_pct": 100,
@@ -702,20 +718,16 @@ class TestWriteGoodFiles(unittest.TestCase):
             self.assertEqual(real.read_text(encoding="utf-8"),
                              "1.1.1.1:443#US-80ms-CN-90\n")
 
-    def test_main_stamps_good_meta(self):
+    def test_main_does_not_stamp_good_meta_without_health(self):
         with tempfile.TemporaryDirectory() as tmp:
             data_dir = Path(tmp)
             (data_dir / "valid").mkdir(parents=True)
             (data_dir / "quality").mkdir(parents=True)
             rc = bg.main(["--data-dir", str(data_dir)])
             self.assertEqual(rc, 0)
-            meta = json.loads(
-                (data_dir / "quality" / "good_meta.json").read_text()
-            )
-            self.assertIn("file_count", meta)
-            self.assertIn("proxy_count", meta)
-            self.assertIsInstance(meta["ts"], str)  # ISO 时间戳已落盘
-            self.assertGreater(len(meta["ts"]), 10)
+            self.assertFalse((data_dir / "quality" / "good_meta.json").exists())
+            status = json.loads((data_dir / "quality" / "good_status.json").read_text())
+            self.assertEqual(status["status"], "preserved")
 
     def test_main_rebuilds_outputs_on_reputation_coverage_collapse(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -731,9 +743,13 @@ class TestWriteGoodFiles(unittest.TestCase):
             (valid / "all.txt").write_text("\n".join(lines) + "\n")
             stale = valid / "all_good.txt"
             stale.write_text("keep-me\n")
+            (quality / "europe.json").write_text(json.dumps({
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "proxies": healthy_map("\n".join(lines)),
+            }), encoding="utf-8")
             rc = bg.main(["--data-dir", str(data_dir)])
             self.assertEqual(rc, 0)
-            self.assertFalse(stale.exists())
+            self.assertEqual(len(stale.read_text().splitlines()), 100)
 
     def test_main_rebuilds_outputs_when_quality_meta_marks_degraded_snapshot(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -762,11 +778,15 @@ class TestWriteGoodFiles(unittest.TestCase):
             }))
             stale = valid / "all_good.txt"
             stale.write_text("keep-me\n")
+            (quality / "europe.json").write_text(json.dumps({
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "proxies": healthy_map("\n".join(lines)),
+            }), encoding="utf-8")
 
             rc = bg.main(["--data-dir", str(data_dir)])
 
             self.assertEqual(rc, 0)
-            self.assertFalse(stale.exists())
+            self.assertEqual(len(stale.read_text().splitlines()), 100)
 
     def test_main_includes_unscored_proxy_when_europe_health_passes(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -801,7 +821,7 @@ class TestWriteGoodFiles(unittest.TestCase):
             self.assertTrue((valid / "all_good.txt").exists())
             self.assertEqual((country / "good.txt").read_text(), line)
 
-    def test_main_clears_all_good_and_country_good_without_europe_health(self):
+    def test_main_preserves_all_good_and_country_good_without_europe_health(self):
         with tempfile.TemporaryDirectory() as tmp:
             data_dir = Path(tmp)
             valid = data_dir / "valid"
@@ -813,6 +833,8 @@ class TestWriteGoodFiles(unittest.TestCase):
             (valid / "all.txt").write_text(line, encoding="utf-8")
             (country / "all.txt").write_text(line, encoding="utf-8")
             (country / "good.txt").write_text("unverified-old-node\n")
+            (valid / "all_good.txt").write_text("previous-global\n")
+            (quality / "good_meta.json").write_text('{"ts":"2026-09-20T00:00:00Z"}\n')
             (quality / "china.json").write_text(json.dumps({
                 "proxies": {
                     "10.0.0.1:443#US": {"verdict": "reachable"}
@@ -827,8 +849,9 @@ class TestWriteGoodFiles(unittest.TestCase):
             rc = bg.main(["--data-dir", str(data_dir)])
 
             self.assertEqual(rc, 0)
-            self.assertFalse((valid / "all_good.txt").exists())
-            self.assertFalse((country / "good.txt").exists())
+            self.assertEqual((valid / "all_good.txt").read_text(), "previous-global\n")
+            self.assertEqual((country / "good.txt").read_text(), "unverified-old-node\n")
+            self.assertEqual((quality / "good_meta.json").read_text(), '{"ts":"2026-09-20T00:00:00Z"}\n')
 
     def test_main_recovers_deleted_outputs_from_inline_scores(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -868,6 +891,82 @@ class TestWriteGoodFiles(unittest.TestCase):
             good = valid / "all_good.txt"
             self.assertTrue(good.exists())
             self.assertEqual(len(good.read_text().splitlines()), 100)
+
+    def test_main_preserves_stale_or_warming_snapshot_without_refreshing_output_timestamp(self):
+        line = "10.0.0.1:443#US-50ms-8.00MB/s\n"
+        now = datetime.now(timezone.utc)
+        cases = {
+            "stale_snapshot": {"ts": (now - timedelta(hours=9)).isoformat(), "proxies": healthy_map(line)},
+            "empty_snapshot": {"ts": now.isoformat(), "proxies": {}},
+            "malformed_snapshot": {"ts": now.isoformat(), "proxies": []},
+            "warming_up": {"ts": now.isoformat(), "schema_version": 2, "proxies": {
+                "10.0.0.1:443#US": {**fresh_availability(), "samples": [1], "speed_sample_count": 1},
+            }},
+            "stale_speed": {"ts": now.isoformat(), "schema_version": 2, "proxies": {
+                key: {**state, "last_speed_at": (now - timedelta(hours=37)).isoformat()}
+                for key, state in healthy_map(line).items()
+            }},
+            "stale_probe": {"ts": now.isoformat(), "schema_version": 2, "proxies": {
+                key: {**state, "last_probe_at": (now - timedelta(hours=9)).isoformat()}
+                for key, state in healthy_map(line).items()
+            }},
+        }
+        for name, snapshot in cases.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                data = Path(tmp)
+                valid, quality = data / "valid", data / "quality"
+                valid.mkdir()
+                quality.mkdir()
+                (valid / "all.txt").write_text(line, encoding="utf-8")
+                (valid / "all_good.txt").write_text("previous\n", encoding="utf-8")
+                (quality / "europe.json").write_text(json.dumps(snapshot), encoding="utf-8")
+                meta = '{"ts":"2026-09-20T00:00:00Z"}\n'
+                (quality / "good_meta.json").write_text(meta, encoding="utf-8")
+                self.assertEqual(bg.main(["--data-dir", tmp]), 0)
+                self.assertEqual((valid / "all_good.txt").read_text(), "previous\n")
+                self.assertEqual((quality / "good_meta.json").read_text(), meta)
+                self.assertEqual(json.loads((quality / "good_status.json").read_text())["status"], "preserved")
+
+    def test_main_rejects_only_stale_or_currently_unavailable_nodes(self):
+        lines = [f"10.0.0.{i}:443#US-50ms-8.00MB/s" for i in range(1, 6)]
+        pool = "\n".join(lines) + "\n"
+        states = healthy_map(pool)
+        keys = [bg.line_to_key(line) for line in lines]
+        now = datetime.now(timezone.utc)
+        states[keys[1]]["last_probe_at"] = (now - timedelta(hours=9)).isoformat()
+        states[keys[2]]["last_speed_at"] = (now - timedelta(hours=37)).isoformat()
+        states[keys[3]]["last_available"] = False
+        states[keys[4]]["last_speed_at"] = (now - timedelta(hours=24)).isoformat()
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp)
+            valid, quality = data / "valid", data / "quality"
+            valid.mkdir()
+            quality.mkdir()
+            (valid / "all.txt").write_text(pool, encoding="utf-8")
+            (quality / "europe.json").write_text(json.dumps({
+                "ts": now.isoformat(), "schema_version": 2, "proxies": states,
+            }), encoding="utf-8")
+            self.assertEqual(bg.main(["--data-dir", tmp]), 0)
+            output = (valid / "all_good.txt").read_text()
+            self.assertEqual({bg.line_to_key(line) for line in output.splitlines()}, {keys[0], keys[4]})
+            self.assertEqual(json.loads((quality / "good_status.json").read_text())["status"], "built")
+            self.assertIn("proxy_count", json.loads((quality / "good_meta.json").read_text()))
+
+    def test_fresh_mature_but_unqualified_history_can_remove_old_good(self):
+        line = "10.0.0.1:443#US-50ms-1.00MB/s\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp)
+            valid, quality = data / "valid", data / "quality"
+            valid.mkdir()
+            quality.mkdir()
+            (valid / "all.txt").write_text(line, encoding="utf-8")
+            (valid / "all_good.txt").write_text("previous\n", encoding="utf-8")
+            (quality / "europe.json").write_text(json.dumps({
+                "ts": datetime.now(timezone.utc).isoformat(), "schema_version": 2,
+                "proxies": healthy_map(line, median_speed_mbps=1),
+            }), encoding="utf-8")
+            self.assertEqual(bg.main(["--data-dir", tmp]), 0)
+            self.assertFalse((valid / "all_good.txt").exists())
 
 
 class TestCommittedCnViewInvariant(unittest.TestCase):

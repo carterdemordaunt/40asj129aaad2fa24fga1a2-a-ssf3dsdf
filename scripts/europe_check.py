@@ -5,8 +5,8 @@ The public workflow runs on GitHub-hosted ``ubuntu-latest``.  It performs a
 real TLS + HTTP GET through every candidate and keeps a short rolling history,
 producing:
 
-* ``data/valid/all_eu.txt`` — currently reachable from the GitHub runner and
-  within the configured speed limit;
+* ``data/valid/all_eu.txt`` — HTTP-available now, with a speed measurement
+  within 36 hours meeting the configured minimum;
 * ``data/valid/all_eu_stable.txt`` — currently qualified, qualified in at
   least ``--min-success-pct`` percent of the rolling samples, and qualified
   for at least ``--min-streak`` consecutive runs.
@@ -14,16 +14,16 @@ producing:
 Standard GitHub-hosted runner geography is not guaranteed.  The measured
 latency is retained for ranking, but is not used as a hard admission limit.
 
-The default candidate pool is ``all_ltd_verified.txt``.  It is deliberately
-small (fastest-per-country candidates that already passed the full-chain
-validator), so GitHub Actions can recheck it frequently without probing the
-entire public pool.
+Every run checks HTTP availability for the entire ``all.txt`` pool. Sustained
+downloads use a separate, oldest-first budget so coverage is not restricted to
+the fastest-per-country pool. Unscheduled downloads are not failed samples.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import math
 import re
 import ssl
@@ -45,18 +45,27 @@ from common import (  # noqa: E402
     write_text_if_changed,
 )
 from validate_proxies import SPEED_WARMUP_BYTES, speed_download  # noqa: E402
+from europe_health import (  # noqa: E402
+    PROBE_MAX_AGE_HOURS,
+    SPEED_MAX_AGE_HOURS,
+    SAMPLE_MAX_AGE_DAYS,
+    is_fresh,
+    parse_timestamp,
+)
 
-DEFAULT_SOURCE = DATA_DIR / "valid" / "all_ltd_verified.txt"
+DEFAULT_SOURCE = DATA_DIR / "valid" / "all.txt"
 DEFAULT_HISTORY = DATA_DIR / "quality" / "europe.json"
 DEFAULT_CURRENT = DATA_DIR / "valid" / "all_eu.txt"
 DEFAULT_STABLE = DATA_DIR / "valid" / "all_eu_stable.txt"
 
 DEFAULT_SNI = "cdnjs.cloudflare.com"
 DEFAULT_PATH = "/ajax/libs/three.js/r128/three.js"
-DEFAULT_TIMEOUT = 6.0
-DEFAULT_WORKERS = 120
+DEFAULT_TIMEOUT = 3.0
+DEFAULT_WORKERS = 400
 DEFAULT_HISTORY_WINDOW = 12
-DEFAULT_HISTORY_MAX_GAP_HOURS = 12
+DEFAULT_SPEED_BUDGET = 1800
+DEFAULT_SPEED_WORKERS = 20
+DEFAULT_SPEED_INTERVAL_HOURS = 2
 DEFAULT_MIN_SAMPLES = 3
 DEFAULT_MIN_SUCCESS_PCT = 80
 DEFAULT_MIN_STREAK = 2
@@ -95,25 +104,32 @@ def source_speed(line: str) -> float:
 
 
 def classify_results(
-    results: dict[str, dict], *, min_speed_mbps: float
+    results: dict[str, dict], *, min_speed_mbps: float,
+    history: dict | None = None, now: datetime | None = None,
 ) -> None:
-    """Mark each result as reachable and sufficiently fast on this runner."""
-    for result in results.values():
-        reachable = bool(result.get("reachable", result.get("ok")))
-        speed = result.get("speed_mbps")
+    """Require current HTTP availability plus a fresh, measured speed."""
+    now = now or datetime.now(timezone.utc)
+    for key, result in results.items():
+        reachable = bool(result.get("available", result.get("ok")))
+        state = (history or {}).get("proxies", {}).get(key, {})
+        speed = state.get("last_speed_mbps") if history is not None else result.get("speed_mbps")
         speed = float(speed) if isinstance(speed, (int, float)) else 0.0
         qualified = (
-            bool(result.get("ok"))
-            and (min_speed_mbps <= 0 or speed >= min_speed_mbps)
+            reachable
+            and (min_speed_mbps <= 0 or (
+                speed >= min_speed_mbps and (
+                    history is None or is_fresh(
+                        state.get("last_speed_at"), SPEED_MAX_AGE_HOURS, now=now
+                    )
+                )
+            ))
         )
         result["reachable"] = reachable
         result["qualified"] = qualified
-        result["speed_mbps"] = speed or None
+        result["effective_speed_mbps"] = speed or None
         result["source_speed_mbps"] = source_speed(result.get("line") or "")
         if reachable and not qualified:
-            result["reject_reason"] = (
-                "speed" if result.get("ok") else result.get("error") or "probe"
-            )
+            result["reject_reason"] = "speed"
 
 
 def tls_context() -> ssl.SSLContext:
@@ -132,7 +148,7 @@ async def probe_once(
     timeout: float,
     ctx: ssl.SSLContext,
 ) -> tuple[bool, float | None, float | None, str | None]:
-    """Require a usable HTTP response and measure a sustained download sample."""
+    """Check TLS, HTTP status and first byte without a sustained download."""
     writer: asyncio.StreamWriter | None = None
     started = time.monotonic()
     ms: float | None = None
@@ -144,6 +160,7 @@ async def probe_once(
                 ssl=ctx,
                 server_hostname=sni,
                 limit=64 * 1024,
+                ssl_shutdown_timeout=1,
             )
             ms = round((time.monotonic() - started) * 1000, 1)
             request = (
@@ -151,6 +168,7 @@ async def probe_once(
                 f"Host: {sni}\r\n"
                 "User-Agent: CF-Proxy-Europe-Check/1.0\r\n"
                 "Accept: */*\r\n"
+                "Range: bytes=0-0\r\n"
                 "Connection: close\r\n\r\n"
             ).encode("ascii")
             writer.write(request)
@@ -166,23 +184,18 @@ async def probe_once(
             body = await reader.read(1)
             if not body:
                 return False, ms, None, "empty_body"
+            ms = round((time.monotonic() - started) * 1000, 1)
+            return True, ms, None, None
     except Exception as exc:  # network failures are expected probe results
         return False, ms, None, type(exc).__name__
     finally:
         if writer is not None:
             try:
                 writer.close()
-                await writer.wait_closed()
-            except OSError:
+                async with asyncio.timeout(1):
+                    await writer.wait_closed()
+            except (OSError, TimeoutError):
                 pass
-
-    speed = await measure_speed(
-        ip, port, host=DEFAULT_SPEED_HOST, path=DEFAULT_SPEED_PATH,
-        timeout=DEFAULT_SPEED_TIMEOUT, cap_bytes=DEFAULT_SPEED_BYTES, ctx=ctx,
-    )
-    if speed is None:
-        return False, ms, None, "speed_failed"
-    return True, ms, speed, None
 
 
 async def measure_speed(
@@ -200,7 +213,8 @@ async def measure_speed(
     try:
         async with asyncio.timeout(timeout):
             reader, writer = await asyncio.open_connection(
-                ip, port, ssl=ctx, server_hostname=host, limit=64 * 1024
+                ip, port, ssl=ctx, server_hostname=host, limit=64 * 1024,
+                ssl_shutdown_timeout=1,
             )
             return await speed_download(
                 reader, writer, host, path, cap_bytes, timeout,
@@ -212,8 +226,9 @@ async def measure_speed(
         if writer is not None:
             try:
                 writer.close()
-                await writer.wait_closed()
-            except OSError:
+                async with asyncio.timeout(1):
+                    await writer.wait_closed()
+            except (OSError, TimeoutError):
                 pass
 
 
@@ -252,7 +267,10 @@ async def probe_all(
                 await asyncio.sleep(0.15 * (attempt + 1))
         results[key] = {
             "ok": ok,
-            "reachable": ms is not None,
+            "available": ok,
+            "reachable": ok,
+            "speed_tested": False,
+            "probed_at": utc_now(),
             "ms": ms,
             "speed_mbps": speed,
             "error": error,
@@ -263,9 +281,58 @@ async def probe_all(
     total = len(tasks)
     for done, task in enumerate(asyncio.as_completed(tasks), 1):
         await task
-        if done % 50 == 0 or done == total:
+        if done % 500 == 0 or done == total:
             print(f"Europe probe: {done}/{total}")
     return results
+
+
+def select_speed_keys(
+    results: dict[str, dict], previous: dict, *, budget: int,
+    now: datetime, interval_hours: float = DEFAULT_SPEED_INTERVAL_HOURS,
+) -> list[str]:
+    """Oldest first; hashed ties avoid bias towards source order/country."""
+    old = previous.get("proxies", {})
+    old = old if isinstance(old, dict) else {}
+    due = []
+    for key, result in results.items():
+        if not result.get("available", result.get("ok")):
+            continue
+        state = old.get(key)
+        state = state if isinstance(state, dict) else {}
+        stamp = state.get("last_speed_at", state.get("last_check", previous.get("ts")))
+        if not state.get("speed_samples"):
+            stamp = None
+        checked = parse_timestamp(stamp)
+        if checked is not None and timedelta(0) <= now - checked < timedelta(hours=interval_hours):
+            continue
+        age_order = checked.timestamp() if checked is not None and checked <= now else float("-inf")
+        due.append((age_order, hashlib.sha256(key.encode("utf-8")).digest(), key))
+    due.sort()
+    return [key for _age, _tie, key in due[:max(0, budget)]]
+
+
+async def probe_speeds(results: dict[str, dict], keys: list[str], *, workers: int) -> None:
+    sem = asyncio.Semaphore(max(1, workers))
+    ctx = tls_context()
+
+    async def work(key: str) -> None:
+        result = results[key]
+        _key, ip, port = parse_endpoint(result["line"])
+        async with sem:
+            speed = await measure_speed(
+                ip, port, host=DEFAULT_SPEED_HOST, path=DEFAULT_SPEED_PATH,
+                timeout=DEFAULT_SPEED_TIMEOUT, cap_bytes=DEFAULT_SPEED_BYTES, ctx=ctx,
+            )
+        result["speed_tested"] = True
+        result["speed_checked_at"] = utc_now()
+        result["speed_mbps"] = speed
+        result["speed_error"] = None if speed is not None else "speed_failed"
+
+    tasks = [asyncio.create_task(work(key)) for key in keys]
+    for done, task in enumerate(asyncio.as_completed(tasks), 1):
+        await task
+        if done % 200 == 0 or done == len(tasks):
+            print(f"Europe speed: {done}/{len(tasks)}")
 
 
 def update_history(
@@ -277,78 +344,63 @@ def update_history(
     min_speed_mbps: float = DEFAULT_MIN_SPEED_MBPS,
 ) -> dict:
     old = previous.get("proxies", {}) if isinstance(previous, dict) else {}
-    previous_ts = previous.get("ts") if isinstance(previous, dict) else None
-    try:
-        previous_at = datetime.fromisoformat(previous_ts.replace("Z", "+00:00"))
-        current_at = datetime.fromisoformat(now.replace("Z", "+00:00"))
-        if previous_at.tzinfo is None:
-            previous_at = previous_at.replace(tzinfo=timezone.utc)
-        if current_at.tzinfo is None:
-            current_at = current_at.replace(tzinfo=timezone.utc)
-        gap = current_at - previous_at
-        if gap < timedelta(0) or gap > timedelta(hours=DEFAULT_HISTORY_MAX_GAP_HOURS):
-            old = {}
-    except (AttributeError, TypeError, ValueError):
-        old = {}
     if not isinstance(old, dict):
         old = {}
-    proxies: dict[str, dict] = {}
+    current_at = parse_timestamp(now)
+    if current_at is None:
+        raise ValueError("invalid history timestamp")
+    # Migrate old snapshots once, without refreshing the age of old speeds.
+    proxies = {}
+    for key, entry in old.items():
+        if not isinstance(entry, dict):
+            continue
+        prior = dict(entry)
+        prior.setdefault("last_probe_at", prior.get("last_check", previous.get("ts")))
+        prior.setdefault("last_speed_at", prior.get("last_check", previous.get("ts")))
+        prior.setdefault("last_speed_mbps", (prior.get("speed_samples") or [None])[-1])
+        prior.setdefault("last_available", bool((
+            prior.get("availability_samples") or prior.get("samples") or [0]
+        )[-1]))
+        if is_fresh(prior.get("last_probe_at"), SAMPLE_MAX_AGE_DAYS * 24, now=current_at):
+            proxies[key] = prior
     for key, result in results.items():
-        prior = old.get(key, {}) if isinstance(old.get(key), dict) else {}
-        keep = max(0, window - 1)
-        prior_samples = prior.get("samples")
-        prior_samples = prior_samples if isinstance(prior_samples, list) else []
-        prior_availability = prior.get("availability_samples")
-        prior_availability = (
-            prior_availability if isinstance(prior_availability, list) else []
-        )
-        prior_speeds = prior.get("speed_samples")
-        prior_speeds = prior_speeds if isinstance(prior_speeds, list) else []
-        prior_latencies = prior.get("latency_samples")
-        prior_latencies = prior_latencies if isinstance(prior_latencies, list) else []
-        samples = [int(bool(x)) for x in prior_samples][-keep:] if keep else []
-        availability_samples = [
-            int(bool(x)) for x in prior_availability
-        ][-keep:] if keep else []
-        speed_samples = [
-            float(x) if isinstance(x, (int, float)) and x > 0 else None
-            for x in prior_speeds
-        ][-keep:] if keep else []
-        latency_samples = [
-            float(x) if isinstance(x, (int, float)) and x > 0 else None
-            for x in prior_latencies
-        ][-keep:] if keep else []
-        # Re-evaluate retained speed samples against the current qualification
-        # threshold. This lets a policy change from 5 MB/s to 2 MB/s take
-        # effect immediately instead of waiting for the rolling window to age
-        # out under the old threshold.
-        if "speed_mbps" in result and len(speed_samples) == len(samples):
-            samples = [
-                int(speed is not None and speed >= min_speed_mbps)
-                for speed in speed_samples
-            ]
-        ok = bool(result.get("qualified", result.get("ok")))
-        reachable = bool(result.get("reachable", result.get("ok")))
-        samples.append(int(ok))
-        availability_samples.append(int(reachable))
-        speed = result.get("speed_mbps")
-        speed_samples.append(
-            float(speed) if isinstance(speed, (int, float)) and speed > 0 else None
-        )
+        prior = proxies.get(key, {})
+        window = max(1, window)
+        availability_samples = list(prior.get("availability_samples") or [])
+        latency_samples = list(prior.get("latency_samples") or [])
+        if not is_fresh(prior.get("last_probe_at"), PROBE_MAX_AGE_HOURS, now=current_at):
+            availability_samples = []
+            latency_samples = []
+        available = bool(result.get("available", result.get("reachable", result.get("ok"))))
+        availability_samples = (availability_samples + [int(available)])[-window:]
         latency = result.get("ms")
-        latency_samples.append(
+        latency_samples = (latency_samples + [
             float(latency) if isinstance(latency, (int, float)) and latency > 0 else None
-        )
-        streak = 0
-        for sample in reversed(samples):
-            if not sample:
-                break
-            streak += 1
-        fail_streak = 0
-        for sample in reversed(samples):
-            if sample:
-                break
-            fail_streak += 1
+        ])[-window:]
+
+        old_speeds = prior.get("speed_samples") or []
+        old_times = prior.get("speed_sample_times")
+        if not isinstance(old_times, list) or len(old_times) != len(old_speeds):
+            old_times = [prior.get("last_speed_at")] * len(old_speeds)
+        retained = [
+            (float(speed) if isinstance(speed, (int, float)) and math.isfinite(speed) and speed > 0 else None, stamp)
+            for speed, stamp in zip(old_speeds, old_times)
+            if is_fresh(stamp, SAMPLE_MAX_AGE_DAYS * 24, now=current_at)
+        ]
+        speed_tested = result.get("speed_tested", True)
+        speed_checked_at = result.get("speed_checked_at", now)
+        if speed_tested:
+            speed = result.get("speed_mbps")
+            retained.append((
+                float(speed) if isinstance(speed, (int, float)) and math.isfinite(speed) and speed > 0 else None,
+                speed_checked_at,
+            ))
+        retained = retained[-window:]
+        speed_samples = [speed for speed, _stamp in retained]
+        speed_sample_times = [stamp for _speed, stamp in retained]
+        # Only actual speed attempts enter this denominator; a skipped speed
+        # measurement never becomes a failure or increases the success streak.
+        samples = [int(speed is not None and speed >= min_speed_mbps) for speed in speed_samples]
         pct = round(sum(samples) * 100 / len(samples)) if samples else 0
         reachable_pct = (
             round(sum(availability_samples) * 100 / len(availability_samples))
@@ -367,6 +419,7 @@ def update_history(
             "samples": samples,
             "availability_samples": availability_samples,
             "speed_samples": speed_samples,
+            "speed_sample_times": speed_sample_times,
             "latency_samples": latency_samples,
             "sample_count": len(samples),
             "speed_sample_count": len(valid_speeds),
@@ -376,20 +429,36 @@ def update_history(
             "p25_speed_mbps": round(q25, 2) if q25 is not None else None,
             "p75_speed_mbps": round(q75, 2) if q75 is not None else None,
             "speed_spread_pct": spread,
-            "streak": streak,
-            "fail_streak": fail_streak,
-            "last_check": now,
-            "last_ok": now if ok else prior.get("last_ok"),
-            "ms": result.get("ms") if ok else prior.get("ms"),
-            "error": None if ok else result.get("error"),
+            "streak": trailing_count(samples, 1),
+            "fail_streak": trailing_count(samples, 0),
+            "availability_streak": trailing_count(availability_samples, 1),
+            "last_available": available,
+            "last_probe_at": result.get("probed_at", now),
+            "last_speed_at": speed_checked_at if speed_tested else prior.get("last_speed_at"),
+            "last_speed_mbps": speed_samples[-1] if speed_samples else None,
+            "last_check": result.get("probed_at", now),
+            "last_ok": speed_checked_at if speed_tested and samples[-1] else prior.get("last_ok"),
+            "ms": result.get("ms") if available else prior.get("ms"),
+            "error": None if available else result.get("error"),
+            "speed_error": result.get("speed_error") if speed_tested else prior.get("speed_error"),
         }
         proxies[key] = entry
     return {
+        "schema_version": 2,
         "ts": now,
         "vantage": "github-actions/ubuntu-latest",
         "window": window,
         "proxies": proxies,
     }
+
+
+def trailing_count(samples: list, value: int) -> int:
+    count = 0
+    for sample in reversed(samples):
+        if sample != value:
+            break
+        count += 1
+    return count
 
 
 def percentile(values: list[float], fraction: float) -> float | None:
@@ -438,6 +507,8 @@ def select_lines(
             and float(state.get("median_speed_mbps") or 0) >= quality_min_speed_mbps
             and state.get("speed_spread_pct") is not None
             and float(state["speed_spread_pct"]) <= quality_max_speed_spread
+            and int(state.get("reachable_pct") or 0) >= quality_min_success_pct
+            and int(state.get("availability_streak") or 0) >= min_streak
         ):
             continue
         if profile == "fast" and float(state.get("median_speed_mbps") or 0) < fast_median_speed_mbps:
@@ -446,12 +517,14 @@ def select_lines(
             len(samples) >= min_samples
             and int(state.get("success_pct") or 0) >= min_success_pct
             and int(state.get("streak") or 0) >= min_streak
+            and int(state.get("reachable_pct") or 0) >= min_success_pct
+            and int(state.get("availability_streak") or 0) >= min_streak
         ):
             continue
         speed = (
             state.get("median_speed_mbps")
             if profile in ("quality", "fast")
-            else result.get("speed_mbps")
+            else result.get("effective_speed_mbps", result.get("speed_mbps"))
         )
         line = rewrite_latency(result["line"], result.get("ms"))
         line = rewrite_speed(line, speed)
@@ -468,7 +541,7 @@ def select_lines(
                 -int(state.get("success_pct") or 0),
                 -int(state.get("streak") or 0),
                 float(result.get("ms") or 1_000_000),
-                -float(result.get("speed_mbps") or source_speed(line)),
+                -float(speed or 0),
                 key,
             )
         selected.append((rank, line))
@@ -487,6 +560,8 @@ def rewrite_speed(line: str, speed: float | int | None) -> str:
 def write_list(path: Path, lines: list[str]) -> None:
     if lines:
         write_text_if_changed(path, "\n".join(lines) + "\n")
+    else:
+        path.unlink(missing_ok=True)
 
 
 def write_quality_list(path: Path, lines: list[str], *, history_ready: bool) -> None:
@@ -498,6 +573,7 @@ def write_quality_list(path: Path, lines: list[str], *, history_ready: bool) -> 
 
 
 async def run(args: argparse.Namespace) -> int:
+    started = time.monotonic()
     if not args.source.exists():
         print(f"source not found: {args.source}", file=sys.stderr)
         return 1
@@ -505,12 +581,14 @@ async def run(args: argparse.Namespace) -> int:
         line for line in args.source.read_text(encoding="utf-8").splitlines()
         if line.strip() and line_to_key(line)
     ]
+    lines = list({line_to_key(line): line for line in lines}.values())
     if args.limit_candidates > 0:
         lines = lines[: args.limit_candidates]
     if not lines:
         print("source contains no parseable candidates", file=sys.stderr)
         return 1
 
+    previous = read_json(args.history)
     results = await probe_all(
         lines,
         workers=args.workers,
@@ -519,41 +597,73 @@ async def run(args: argparse.Namespace) -> int:
         sni=args.sni,
         path=args.path,
     )
-    ok_count = sum(bool(v.get("ok")) for v in results.values())
+    if len(results) != len(lines):
+        print("::error::Incomplete availability run; history and outputs left untouched", file=sys.stderr)
+        return 2
+    ok_count = sum(bool(v.get("available")) for v in results.values())
     ratio = ok_count / max(1, len(results))
     reachable_count = sum(bool(v.get("reachable")) for v in results.values())
     print(
         f"Europe probe result: reachable={reachable_count}/{len(results)} "
-        f"qualified={ok_count}/{len(results)} ({ratio:.1%})"
+        f"HTTP-available={ok_count}/{len(results)} ({ratio:.1%})"
     )
     # A DNS/routing/SNI outage must not poison the rolling history or wipe a
     # previously useful subscription.
     if len(results) >= 20 and ratio < args.min_run_success_pct / 100:
         print(
-            "aborting: run-wide success ratio is below the safety floor; "
+            "::error::aborting: run-wide HTTP success ratio is below the safety floor; "
             "history and outputs were left untouched",
             file=sys.stderr,
         )
         return 2
 
-    classify_results(
-        results,
-        min_speed_mbps=args.min_speed_mbps,
+    speed_keys = select_speed_keys(
+        results, previous, budget=args.speed_budget,
+        now=parse_timestamp(utc_now()), interval_hours=args.speed_interval_hours,
     )
-    qualified_count = sum(bool(v.get("qualified")) for v in results.values())
+    availability_seconds = round(time.monotonic() - started, 2)
     print(
-        f"GitHub candidate filter: qualified={qualified_count}/{len(results)} "
-        f"(speed>={args.min_speed_mbps:g}MB/s; latency is ranking-only)"
+        f"Full-pool availability checked; rotating downloads={len(speed_keys)} "
+        f"(budget={args.speed_budget}, speed workers={args.speed_workers})"
     )
+    speed_started = time.monotonic()
+    await probe_speeds(results, speed_keys, workers=args.speed_workers)
+    speed_seconds = round(time.monotonic() - speed_started, 2)
+    speed_ok = sum(results[key].get("speed_mbps") is not None for key in speed_keys)
+    if len(speed_keys) >= 20 and speed_ok / len(speed_keys) < args.min_run_success_pct / 100:
+        print("::error::Whole-run download failure; history and outputs left untouched", file=sys.stderr)
+        return 2
 
     now = utc_now()
+    current_at = parse_timestamp(now)
     history = update_history(
-        read_json(args.history),
+        previous,
         results,
         window=args.history_window,
         now=now,
         min_speed_mbps=args.min_speed_mbps,
     )
+    classify_results(results, min_speed_mbps=args.min_speed_mbps, history=history, now=current_at)
+    states = history["proxies"]
+    coverage = {
+        "candidates": len(lines),
+        "availability_tested": len(results),
+        "availability_seconds": availability_seconds,
+        "available": ok_count,
+        "speed_tested": len(speed_keys),
+        "speed_seconds": speed_seconds,
+        "speed_succeeded": speed_ok,
+        "speed_fresh": sum(is_fresh(
+            states[key].get("last_speed_at"), SPEED_MAX_AGE_HOURS, now=current_at
+        ) for key in results),
+        "speed_unmeasured": sum(not states[key].get("last_speed_at") for key in results),
+        "qualified": sum(bool(v.get("qualified")) for v in results.values()),
+    }
+    coverage["speed_stale"] = len(results) - coverage["speed_fresh"] - coverage["speed_unmeasured"]
+    history["coverage"] = coverage
+    print(f"Europe coverage: {coverage}")
+    if args.speed_budget and math.ceil(ok_count / args.speed_budget) * 2 > SPEED_MAX_AGE_HOURS:
+        print("::warning::Speed budget cannot cover the available pool within 36h at a 2h cadence")
     current = select_lines(
         results,
         history,
@@ -602,15 +712,21 @@ async def run(args: argparse.Namespace) -> int:
         quality_min_speed_mbps=args.min_speed_mbps,
         fast_median_speed_mbps=args.fast_median_speed_mbps,
     )
+    coverage.update(current=len(current), stable=len(stable), quality=len(quality), fast=len(fast))
     write_json(args.history, history)
     write_list(args.current_out, current)
-    # During the first few runs there are intentionally not enough samples.
-    # Do not delete an existing stable list merely because history was reset.
-    if stable or not args.stable_out.exists():
-        write_list(args.stable_out, stable)
+    stable_history_ready = any(
+        len(state.get("samples", [])) >= args.min_samples
+        and len(state.get("availability_samples") or []) >= args.min_streak
+        and is_fresh(state.get("last_speed_at"), SPEED_MAX_AGE_HOURS, now=current_at)
+        for key, state in states.items() if key in results
+    )
+    write_quality_list(args.stable_out, stable, history_ready=stable_history_ready)
     quality_history_ready = any(
         len(state.get("samples", [])) >= args.quality_min_samples
         and int(state.get("speed_sample_count") or 0) >= args.quality_min_samples
+        and len(state.get("availability_samples") or []) >= args.min_streak
+        and is_fresh(state.get("last_speed_at"), SPEED_MAX_AGE_HOURS, now=current_at)
         for state in history.get("proxies", {}).values()
         if isinstance(state, dict)
     )
@@ -646,6 +762,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--path", default=DEFAULT_PATH)
     ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
     ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
+    ap.add_argument("--speed-budget", type=int, default=DEFAULT_SPEED_BUDGET,
+                    help="Maximum downloads per run (0 = availability only)")
+    ap.add_argument("--speed-workers", type=int, default=DEFAULT_SPEED_WORKERS)
+    ap.add_argument("--speed-interval-hours", type=float, default=DEFAULT_SPEED_INTERVAL_HOURS,
+                    help="Do not repeat a speed measurement inside this interval")
+    ap.add_argument("--run-timeout", type=float, default=25 * 60,
+                    help="Total seconds before aborting without publishing partial results")
     ap.add_argument("--retries", type=int, default=1)
     ap.add_argument("--history-window", type=int, default=DEFAULT_HISTORY_WINDOW)
     ap.add_argument("--min-samples", type=int, default=DEFAULT_MIN_SAMPLES)
@@ -695,8 +818,23 @@ def main(argv: list[str] | None = None) -> int:
         help="Maximum lines in each Europe subscription (0 = unlimited)",
     )
     args = ap.parse_args(argv)
+    if args.speed_budget < 0 or args.speed_interval_hours < 0 or args.history_window < 1:
+        ap.error("speed budget/interval must be nonnegative and history window must be positive")
+    if min(args.workers, args.speed_workers, args.timeout, args.run_timeout) <= 0:
+        ap.error("workers and timeouts must be positive")
+    if not 0 <= args.min_run_success_pct <= 100:
+        ap.error("min-run-success-pct must be between 0 and 100")
+
+    async def bounded_run() -> int:
+        try:
+            async with asyncio.timeout(args.run_timeout):
+                return await run(args)
+        except TimeoutError:
+            print("::error::Europe run timed out; history and outputs left untouched", file=sys.stderr)
+            return 2
+
     try:
-        return asyncio.run(run(args))
+        return asyncio.run(bounded_run())
     except KeyboardInterrupt:
         return 130
 

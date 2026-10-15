@@ -59,12 +59,19 @@
 
 ### `scripts/europe_check.py`
 
-从 GitHub Runner 视角对候选做 TLS/HTTP 与独立稳态下载测速（丢弃最多 256 KiB 慢启动数据后计时），并维护 `data/quality/europe.json` 最多 12 轮的逐节点历史。每轮合格要求 HTTP/下载完整成功且实测速度至少 `2 MB/s`。`all_eu_stable.txt` 保留基础滚动筛选；新增 `all_eu_quality.txt` 要求至少 6 个有效速度样本、合格率≥90%、连续合格≥2 轮、滚动中位速度≥2 MB/s、速度 IQR/中位数≤0.5；`all_eu_fast.txt` 在此基础上还要求中位速度≥10 MB/s。质量文件行内速度为滚动中位数，普通当前清单为本轮测速值。
+从 GitHub Runner 视角每轮检查 `all.txt` **全部节点**的 TLS、HTTP 状态和首字节。轻量请求使用 `Range: bytes=0-0`，读到首字节即关闭，不进行大文件下载。随后按预算轮转独立稳态测速（丢弃最多 256 KiB 慢启动数据）：优先从未测过的节点，其次最久未测的节点；只在本轮 HTTP 可用的节点中分配测速名额。未分配测速的节点不增加测速样本、不算失败，也不刷新测速时间。
+
+`all_eu.txt` 要求本轮 HTTP 可用，且最近 36 小时内的最后一次测速达到 `2 MB/s`；`all_eu_stable.txt` 要求至少 3 次测速、测速合格率及可用率均≥80%、两类连续成功均≥2。`all_eu_quality.txt` 保持严格要求：至少 6 个有效速度样本、测速合格率及可用率均≥90%、两类连续成功均≥2、中位速度≥2 MB/s、速度 IQR/中位数≤0.5；`all_eu_fast.txt` 还要求中位速度≥10 MB/s。quality/fast 行内速度为滚动中位数，current/stable 为最近一次测速值。输出数量上限不限制探测覆盖范围，也不限制供 good 使用的完整历史。
 
 | 参数 | 说明 | 默认 |
 |---|---|---|
-| `--source` | 候选池 | `data/valid/all_ltd_verified.txt` |
-| `--history-window` | 保留的最近采样轮次 | 12 |
+| `--source` | 全量候选池 | `data/valid/all.txt` |
+| `--workers` / `--timeout` | 可用性并发 / 单次超时秒数 | 400 / 3 |
+| `--speed-budget` | 每轮最多测速数；0=只测可用性 | 1800 |
+| `--speed-workers` | 测速并发 | 20 |
+| `--speed-interval-hours` | 同节点两次测速的最小间隔 | 2 |
+| `--run-timeout` | 整轮截止秒数，超时不发布部分结果 | 1500 |
+| `--history-window` | 可用性、测速分别保留的样本数上限 | 12 |
 | `--min-speed-mbps` | 每轮测速合格门槛 | 2 |
 | `--quality-min-samples` | 质量清单最低采样数 | 6 |
 | `--quality-min-success-pct` | 质量清单滚动合格率门槛 | 90 |
@@ -72,7 +79,9 @@
 | `--fast-median-speed-mbps` | 高速清单中位速度门槛 | 10 |
 | `--output-limit` | 每个输出最多节点数（0=不限） | 500 |
 
-质量历史不足 6 个有效速度样本时不会用空文件覆盖已有 `all_eu_quality.txt`/`all_eu_fast.txt`。采集间隔超过 12 小时会清空旧窗口重新积累；当整轮成功率异常低时，历史与清单均保持不变。
+按每 2 小时成功运行一次估算，1,800 次测速预算可在 12 轮内覆盖约 21,532 个持续可用节点；积累 6 个速度样本约需 6 天。此估算不包含 Action 延迟、失败和节点增减，实际阶段耗时、覆盖数、未测速/过期数写入 `europe.json.coverage` 并打印到日志。预算不足以在 36 小时内轮转一遍时会发出警告，不能把保留旧结果当作新鲜测量。
+
+每节点独立记录 `last_probe_at`、`last_speed_at`；可用性超过 8 小时、测速超过 36 小时即不能作为新的合格节点使用。两类历史各保留最多 12 个样本，测速样本还按 14 天淘汰；长断档仅重置该节点的可用性连续计数，不清空全局测速窗口。质量历史尚未成熟时保留既有 quality/fast 输出；整轮 HTTP/下载成功率低于安全线、探测不完整或超时均在写盘前失败，历史和清单保持不变。
 
 ### `scripts/generate_stats.py`
 
@@ -518,7 +527,7 @@ python3 scripts/annotate_classify.py --data-dir /path/to/data
 1. **节点健康达标（所有 good 输出）**：`europe.json` 最近至少 6 个有效速度样本；合格率 ≥90%；连续合格 ≥2 轮；滚动中位速度 ≥2 MB/s；速度 IQR/中位数 ≤50%
 2. **信誉仅用于排序**：信誉缺失、低分或高风险都不会阻止进入 good；有信誉时只参与综合排序分。
 
-综合分在有信誉分时为 `round(0.6×信誉分 + 0.2×延迟分 + 0.2×速度分)`；无信誉分时将剩余两项归一为 `round((延迟分 + 速度分) / 2)`。延迟分 ≤100ms 记 100、≥1500ms 记 0 线性递减，速度分 `min(MB/s÷2, 1)×100`，缺失均记 0。同分依次按延迟升序、key 升序。欧洲历史缺失或过期时所有 `good` 输出（包括根级 `all_good.txt`）都不保留未经新规则验证的节点。
+综合分在有信誉分时为 `round(0.6×信誉分 + 0.2×延迟分 + 0.2×速度分)`；无信誉分时将剩余两项归一为 `round((延迟分 + 速度分) / 2)`。延迟分 ≤100ms 记 100、≥1500ms 记 0 线性递减，速度分 `min(MB/s÷2, 1)×100`，缺失均记 0。同分依次按延迟升序、key 升序。每节点要求最近 HTTP 可用、可用率≥90%、连续可用≥2，且可用性不超过 8 小时、测速不超过 36 小时；某个节点过期不会使其他新鲜节点失效。
 
 | 参数 | 说明 | 默认 |
 |---|---|---|
@@ -526,9 +535,9 @@ python3 scripts/annotate_classify.py --data-dir /path/to/data
 
 输出文件名/目录布局不变：候选池 `all.txt`/`all_ltd.txt` 不应用 good 门槛；根级 `all_good.txt`/`all_good_ltd.txt` 以及国家/集合 `good.txt`/`good_ltd.txt` 均要求欧洲健康。所有 good 视图均不要求中国可达或信誉门槛。既有 `*_verified/_stable/_uptime/_top/_<tier>`、`good_ltd`、tiers、`all_diverse.txt` 与 `good_meta.json` 继续生成。`build-good.yml` 在欧洲检查成功后重建；信誉刷新工作流在刷新脚本成功后也会重建 good，不要求本轮信誉快照发布成功。
 
-每一份 `good` 清单保留欧洲 Runner 的延迟和实测速率标注，不依赖 `china.json`。专职 `.github/workflows/build-good.yml` 在 `Europe reachability check` 成功后运行本脚本；它只消费已有的欧洲健康和信誉快照，不刷新相关数据，也不构建 premium。历史预热期间候选池仍可更新，但 `good` 输出只写已有成熟欧洲健康记录的节点。
+每一份 `good` 清单保留输入池的欧洲 Runner 延迟和实测速率标注，不依赖 `china.json`。专职 `.github/workflows/build-good.yml` 在 `Europe reachability check` 成功后运行本脚本；它只消费已有的欧洲健康和信誉快照，不刷新相关数据，也不构建 premium。已有部分成熟健康记录时，good 逐步纳入符合条件的节点；全局仍在预热时保留旧产物。
 
-**写入与护栏**：`build-good.yml` 与信誉刷新工作流调用 `build_good.py` 写入 good 清单，不调用 `build_premium.py`。Action 先运行 `tests.test_build_good`，再使用 `commit_data.sh` 仅提交本次生成的数据文件。信誉覆盖率低不会冻结 good 清单；缺失信誉按无信誉条件处理，所有 good 输出的欧洲健康门槛照常执行。
+**写入与护栏**：`build-good.yml` 与信誉刷新工作流调用 `build_good.py`，不调用 `build_premium.py`。历史缺失、快照超过 8 小时、无新鲜可用性数据、全部测速过期或仍在预热时，保留所有旧产物及 `good_meta.json` 原始生成时间；只更新 `good_status.json`，标记 `preserved`、原因、健康快照时间和原产物时间，并发出 Action warning。正常重建时状态为 `built`；新鲜且成熟的测量确实不合格时仍会清理对应旧节点。Action 先运行测试，再通过 `commit_data.sh` 提交本次产物。信誉覆盖率低本身不会冻结 good 清单。
 
 ```bash
 python3 scripts/build_good.py
