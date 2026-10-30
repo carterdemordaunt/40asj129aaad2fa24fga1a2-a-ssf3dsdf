@@ -496,10 +496,15 @@ def select_long_keys(
         checked = parse_timestamp(state.get("last_long_at"))
         if checked is not None and timedelta(0) <= now - checked < timedelta(hours=interval_hours):
             continue
+        try:
+            long_streak = int(state.get("long_streak") or 0)
+        except (TypeError, ValueError):
+            long_streak = 0
+        repeat_priority = 0 if long_streak == 1 and state.get("last_long_ok") else 1
         age_order = checked.timestamp() if checked is not None and checked <= now else float("-inf")
-        due.append((age_order, hashlib.sha256(key.encode("utf-8")).digest(), key))
+        due.append((repeat_priority, age_order, hashlib.sha256(key.encode("utf-8")).digest(), key))
     due.sort()
-    return [key for _age, _tie, key in due[:max(0, budget)]]
+    return [key for _priority, _age, _tie, key in due[:max(0, budget)]]
 
 
 async def probe_long_connections(

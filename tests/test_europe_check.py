@@ -46,13 +46,20 @@ class TestEuropeCheck(unittest.TestCase):
         history = {"proxies": {
             "untested": dict(mature),
             "recent": {**mature, "last_long_at": (now - timedelta(hours=1)).isoformat()},
+            "passed": {
+                **mature,
+                "long_samples": [1],
+                "long_streak": 1,
+                "last_long_ok": True,
+                "last_long_at": (now - timedelta(hours=3)).isoformat(),
+            },
             "slow": {**mature, "median_speed_mbps": 2.9},
         }}
         results = {key: {"available": True} for key in history["proxies"]}
         selected = ec.select_long_keys(
             results, history, budget=10, now=now, interval_hours=2,
         )
-        self.assertEqual(selected, ["untested"])
+        self.assertEqual(selected, ["passed", "untested"])
         self.assertEqual(ec.select_long_keys(
             results, history, budget=0, now=now,
         ), [])
