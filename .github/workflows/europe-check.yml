@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   check:
-    name: Full-pool availability and rotating speed checks
+    name: Availability, rotating speed and long-connection checks
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -58,6 +58,8 @@ jobs:
           --source data/valid/all.txt
           --workers 400 --timeout 3
           --speed-budget 5400 --speed-workers 20
+          --long-budget 200 --long-workers 50
+          --long-duration 60 --long-interval-seconds 1
           --speed-target-samples ${{ inputs.speed_target_samples || '0' }}
           --run-timeout 1500
           --min-speed-mbps 2

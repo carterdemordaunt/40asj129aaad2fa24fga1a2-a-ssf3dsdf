@@ -268,9 +268,9 @@ Status 徽章端点数据（shields.io `endpoint` 格式，供 README 徽章与�
 
 ### `data/quality/europe.json` 与欧洲质量清单
 
-`europe.json` 由 `europe_check.py` 写入，顶层 `{schema_version: 2, ts, vantage, window, coverage, proxies}`。每轮对 `all.txt` 全量轻量探测，再按最久未测速优先分配最多 5,400 次独立 HTTPS 下载。`coverage` 记录候选数、实际探测数、HTTP 可用数、测速数及成功数、两阶段耗时、新鲜/未测/过期测速数和输出数。默认每节点两类窗口各保留最多 12 个样本；测速样本另按 14 天淘汰，不再因全局采集断档清空历史。
+`europe.json` 由 `europe_check.py` 写入，顶层 `{schema_version: 2, ts, vantage, window, coverage, proxies}`。每轮对 `all.txt` 全量轻量探测，再按最久未测速优先分配最多 5,400 次独立 HTTPS 下载；另轮转最多 200 次长连接测试。`coverage` 记录候选数、实际探测数、HTTP 可用数、测速与长测的样本数/成功数、各阶段耗时、新鲜/未测/过期测速数和输出数。可用性/测速各最多保留 12 个样本，长测最多保留 6 个样本；各历史样本 14 天淘汰，不因全局采集断档清空。
 
-`proxies[key]` 包含 `availability_samples`（HTTP 状态及首字节成功的 0/1 序列）、`latency_samples`、`reachable_pct`、`availability_streak`、`last_available`、`last_probe_at`；测速单独记录 `speed_samples`（失败为 null）、`speed_sample_times`、`samples`（各次实际测速达到门槛的 0/1 序列）、`sample_count`（测速尝试数）、`speed_sample_count`（有效测速数）、`success_pct`、`streak`/`fail_streak`、`last_speed_at`、`last_speed_mbps` 和 `speed_error`。未轮到测速不追加任何测速样本，不改变测速合格率或连续次数。`last_check` 保留为可用性检测时间的兼容字段，不能用于刷新测速时效。中位速度、p25/p75、`speed_spread_pct=(p75-p25)/median` 由有效速度样本计算；独立下载仍排除 TCP 慢启动数据。旧版 JSON 通过原有 `last_check`/`ts` 迁移，不把旧测量改成当前时间。
+`proxies[key]` 包含 `availability_samples`（HTTP 状态及首字节成功的 0/1 序列）、`latency_samples`、`reachable_pct`、`availability_streak`、`last_available`、`last_probe_at`；测速单独记录 `speed_samples`（失败为 null）、`speed_sample_times`、`samples`（各次实际测速达到 2 MB/s 门槛的 0/1 序列）、`sample_count`（测速尝试数）、`speed_sample_count`（有效测速数）、`success_pct`、`streak`/`fail_streak`、`last_speed_at`、`last_speed_mbps` 和 `speed_error`。长连接测试另记录 `long_samples`/`long_sample_times`、`long_streak`、`last_long_at`、`last_long_ok`、请求数、连接存活秒数及错误原因；每次在同一 TLS 连接上按秒发送小型 HTTP 请求，默认连续 60 秒。未轮到测速或长测不追加失败样本，也不改变相应连续次数。`last_check` 保留为可用性检测时间的兼容字段，不能用于刷新测速时效。中位速度、p25/p75、`speed_spread_pct=(p75-p25)/median` 由有效速度样本计算；独立下载仍排除 TCP 慢启动数据。旧版 JSON 通过原有 `last_check`/`ts` 迁移，不把旧测量改成当前时间。
 
 `all_eu.txt` 是本轮 HTTP 可用且最近 36 小时内最后测速≥2 MB/s 的节点；行内速度为最近一次测速，不要求本轮重新下载。`all_eu_stable.txt` 要求至少 3 次测速、测速合格率和 HTTP 可用率均≥80%、两类连续成功均≥2；`all_eu_quality.txt` 要求至少 6 个有效速度样本、两类成功率均≥90%、两类连续成功均≥2、中位速度≥2 MB/s、IQR/中位数≤0.5；`all_eu_fast.txt` 是 quality 中位速度≥10 MB/s 的子集。后两者的速度字段写滚动中位数。时效按节点分别判断（可用性 8 小时、测速 36 小时）。全局预热时保留已有质量输出；整轮失败或超时不发布部分结果。默认每个欧洲清单最多 500 条，但健康历史始终覆盖全量，不限制 good 的覆盖范围。
 
@@ -327,7 +327,7 @@ Status 徽章端点数据（shields.io `endpoint` 格式，供 README 徽章与�
 1. 欧洲历史至少 6 个有效速度样本、测速合格率≥90%、连续合格≥2、中位速度≥2 MB/s、IQR/中位数≤0.5。
 2. 最近 HTTP 探测可用、可用率≥90%、连续可用≥2；自身可用性检测不超过 8 小时，测速不超过 36 小时。
 
-国家与集合的 `good.txt`、`good_ltd.txt` 以及根级 good 变体共用上述健康门槛和 `europe.json` 全量历史。good 不要求 CN 可达；信誉仅用于排序，缺失、低分、高风险都不单独排除节点。
+国家与集合的 `good.txt`、`good_ltd.txt` 以及根级 good 变体共用上述基础门槛和 `europe.json` 全量历史。国家目录下的 `good.txt`/`good_ltd.txt` 另要求测速历史的 3 MB/s 合格率≥90%、连续合格≥2、中位速度≥3 MB/s，以及同一 TLS 连接上 60 秒长测最近两次连续成功（长测不超过 14 天）；长测预热时只输出当前满足速度门槛的候选，避免旧低速条目绕过新筛选。good 不要求 CN 可达；信誉仅用于排序，缺失、低分、高风险都不单独排除节点。
 
 有信誉分时按 `round(0.6×信誉分 + 0.2×延迟分 + 0.2×速度分)` 排序；无信誉分时延迟与速度各占 50%。延迟分 ≤100ms 记 100、≥1500ms 记 0 线性递减，速度分 `min(MB/s÷2, 1)×100`，缺失均记 0；同分依次按延迟升序、key 序。good 清单保留输入池的欧洲延迟和速度标注，不转换为 CN 估算。
 

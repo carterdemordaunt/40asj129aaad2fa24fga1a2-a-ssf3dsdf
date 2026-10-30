@@ -2,9 +2,8 @@
 """Build comprehensive-best (综合最优) ``good.txt`` lists from quality data.
 
 Filters the annotated valid pools to proxies that satisfy Europe-runner policy.
-Every good list requires stable and fast history:
-   at least six recent speed samples, >=90% qualified runs, median >=2 MB/s,
-   and interquartile speed spread <=50%
+Every good list requires stable and fast history; country good lists add a
+3 MB/s median-speed requirement and two consecutive long-connection passes.
 
 Reputation is optional ranking metadata only. It never rejects a line. When
 present it contributes to a composite ranking score::
@@ -32,6 +31,7 @@ Outputs are the Europe-viewed annotated lines:
 """
 
 import argparse
+import math
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -59,7 +59,12 @@ from common import (
     write_json,
     write_text_if_changed,
 )
-from europe_health import PROBE_MAX_AGE_HOURS, is_fresh, node_is_fresh
+from europe_health import (
+    PROBE_MAX_AGE_HOURS,
+    SAMPLE_MAX_AGE_DAYS,
+    is_fresh,
+    node_is_fresh,
+)
 
 LATENCY_BEST_MS = 100
 LATENCY_WORST_MS = 1500
@@ -71,8 +76,12 @@ HEALTH_MIN_SAMPLES = 6
 HEALTH_MIN_SUCCESS_PCT = 90
 HEALTH_MIN_STREAK = 2
 HEALTH_MIN_SPEED_MBPS = 2.0
+COUNTRY_HEALTH_MIN_SPEED_MBPS = 3.0
 HEALTH_MAX_SPEED_SPREAD = 0.5
 HEALTH_MAX_AGE_HOURS = PROBE_MAX_AGE_HOURS
+HEALTH_MIN_LONG_SAMPLES = 2
+HEALTH_MIN_LONG_STREAK = 2
+HEALTH_LONG_MAX_AGE_HOURS = SAMPLE_MAX_AGE_DAYS * 24
 
 WEIGHT_REP = 0.6
 WEIGHT_LATENCY = 0.2
@@ -234,16 +243,77 @@ def build_health_map(data: dict) -> dict[str, dict]:
     return result
 
 
+def recent_long_samples(
+    health: dict, *, now: datetime,
+) -> list[int]:
+    samples = health.get("long_samples")
+    stamps = health.get("long_sample_times")
+    if not isinstance(samples, list) or not isinstance(stamps, list) or len(samples) != len(stamps):
+        return []
+    return [
+        int(sample)
+        for sample, stamp in zip(samples, stamps)
+        if sample in (0, 1)
+        and is_fresh(stamp, HEALTH_LONG_MAX_AGE_HOURS, now=now)
+    ]
+
+
+def recent_speed_outcomes(
+    health: dict, *, now: datetime, min_speed_mbps: float,
+) -> list[int]:
+    samples = health.get("speed_samples")
+    stamps = health.get("speed_sample_times")
+    if not isinstance(samples, list) or not isinstance(stamps, list) or len(samples) != len(stamps):
+        return []
+    outcomes = []
+    for sample, stamp in zip(samples, stamps):
+        if not is_fresh(stamp, SAMPLE_MAX_AGE_DAYS * 24, now=now):
+            continue
+        try:
+            speed = float(sample)
+        except (TypeError, ValueError):
+            speed = 0.0
+        outcomes.append(int(math.isfinite(speed) and speed >= min_speed_mbps))
+    return outcomes
+
+
+def country_speed_history_healthy(health: dict, *, now: datetime) -> bool:
+    outcomes = recent_speed_outcomes(
+        health, now=now, min_speed_mbps=COUNTRY_HEALTH_MIN_SPEED_MBPS,
+    )
+    try:
+        median_speed = float(health.get("median_speed_mbps") or 0)
+    except (TypeError, ValueError):
+        return False
+    return bool(
+        len(outcomes) >= HEALTH_MIN_SAMPLES
+        and sum(outcomes) * 100 / len(outcomes) >= HEALTH_MIN_SUCCESS_PCT
+        and outcomes[-HEALTH_MIN_STREAK:] == [1] * HEALTH_MIN_STREAK
+        and median_speed >= COUNTRY_HEALTH_MIN_SPEED_MBPS
+    )
+
+
+def long_history_mature(health: dict, *, now: datetime) -> bool:
+    return (
+        len(recent_long_samples(health, now=now)) >= HEALTH_MIN_LONG_SAMPLES
+        and is_fresh(
+            health.get("last_long_at"), HEALTH_LONG_MAX_AGE_HOURS, now=now
+        )
+    )
+
+
 def is_healthy(
     key: str, health_map: dict[str, dict] | None, *, now: datetime | None = None,
+    country_strict: bool = False, require_long: bool = True,
 ) -> bool:
-    """Require mature, reliable, fast and low-variance rolling measurements."""
+    """Apply shared health checks, with optional stricter country admission."""
     if health_map is None:
         return True
     health = health_map.get(key)
     if not isinstance(health, dict):
         return False
-    if not node_is_fresh(health, now=now or datetime.now(timezone.utc)):
+    now = now or datetime.now(timezone.utc)
+    if not node_is_fresh(health, now=now):
         return False
     samples = health.get("samples")
     try:
@@ -256,7 +326,7 @@ def is_healthy(
         availability_streak = int(health.get("availability_streak") or 0)
     except (KeyError, TypeError, ValueError):
         return False
-    return bool(
+    healthy = bool(
         isinstance(samples, list)
         and len(samples) >= HEALTH_MIN_SAMPLES
         and speed_sample_count >= HEALTH_MIN_SAMPLES
@@ -267,6 +337,25 @@ def is_healthy(
         and bool(health.get("last_available"))
         and reachable_pct >= HEALTH_MIN_SUCCESS_PCT
         and availability_streak >= HEALTH_MIN_STREAK
+    )
+    if not healthy or not country_strict:
+        return healthy
+    if not country_speed_history_healthy(health, now=now):
+        return False
+    if not require_long:
+        return True
+    long_samples = recent_long_samples(health, now=now)
+    try:
+        long_streak = int(health.get("long_streak") or 0)
+    except (TypeError, ValueError):
+        return False
+    return bool(
+        len(long_samples) >= HEALTH_MIN_LONG_SAMPLES
+        and long_samples[-HEALTH_MIN_LONG_SAMPLES:] == [1] * HEALTH_MIN_LONG_SAMPLES
+        and long_streak >= HEALTH_MIN_LONG_STREAK
+        and is_fresh(
+            health.get("last_long_at"), HEALTH_LONG_MAX_AGE_HOURS, now=now
+        )
     )
 
 
@@ -309,6 +398,8 @@ def filter_rank(
     cn_ms: dict[str, float] | None = None,
     health_map: dict[str, dict] | None = None,
     min_rep_score: int = MIN_REP_SCORE,
+    country_strict: bool = False,
+    require_long: bool = True,
 ) -> list[str]:
     """Filter pool lines by entry criteria and rank by composite score.
 
@@ -323,7 +414,10 @@ def filter_rank(
         key = line_to_key(line)
         if not key:
             continue
-        if not is_healthy(key, health_map):
+        if not is_healthy(
+            key, health_map, country_strict=country_strict,
+            require_long=require_long,
+        ):
             continue
         rep = rep_map.get(key)
         rep_score = rep.get("score") if rep else None
@@ -451,6 +545,7 @@ def write_good_files(
     stable_keys = load_china_stable_keys()
     uptime_keys = load_uptime_keys()
     tier_lines: dict[str, list[tuple[str, Path]]] = {t: [] for t in TIER_TOKENS}
+    now = datetime.now(timezone.utc)
 
     def emit(base: Path, lines: list[str], tier_name: str | None = None) -> int:
         raw = lines
@@ -520,12 +615,27 @@ def write_good_files(
                 vpath.unlink()
         return n
 
-    def rank_ltd(pool: Path) -> list[str]:
+    def country_long_candidates(pool: Path) -> list[str]:
+        if not pool.exists():
+            return []
+        return [
+            key
+            for line in pool.read_text(encoding="utf-8").splitlines()
+            if (key := line_to_key(line))
+            and key in health_map
+            and is_healthy(key, health_map, now=now)
+            and country_speed_history_healthy(health_map[key], now=now)
+        ]
+
+    def rank_ltd(
+        pool: Path, *, country_strict: bool = False, require_long: bool = True,
+    ) -> list[str]:
         if not pool.exists():
             return []
         return filter_rank(
             pool.read_text(encoding="utf-8"), china_set, rep_map,
-            health_map=health_map,
+            health_map=health_map, country_strict=country_strict,
+            require_long=require_long,
         )
 
     stats["all_good_ltd"] = emit_ltd(
@@ -543,16 +653,45 @@ def write_good_files(
                    else f"{group_dir.name}")
             pool = group_dir / "all.txt"
             if pool.exists():
+                country_strict = sub == "countries"
+                good_path = group_dir / "good.txt"
+                pool_text = pool.read_text(encoding="utf-8")
+                country_candidates = country_long_candidates(pool) if country_strict else []
+                long_history_ready = any(
+                    long_history_mature(health_map[key], now=now)
+                    for key in country_candidates
+                )
+                if country_strict and country_candidates and not long_history_ready:
+                    # Keep the new speed gate active while long history warms.
+                    country_lines = filter_rank(
+                        pool_text, china_set, rep_map, health_map=health_map,
+                        country_strict=True, require_long=False,
+                    )
+                else:
+                    country_lines = filter_rank(
+                        pool_text, china_set, rep_map,
+                        health_map=health_map, country_strict=country_strict,
+                    )
                 stats[name] = emit(
-                    group_dir / "good.txt",
-                    filter_rank(
-                        pool.read_text(encoding="utf-8"), china_set, rep_map,
-                        health_map=health_map,
-                    ),
+                    good_path,
+                    country_lines,
                     tier_name=rel,
                 )
+            ltd_pool = group_dir / "ltd.txt"
+            ltd_good_path = group_dir / "good_ltd.txt"
+            ltd_candidates = country_long_candidates(ltd_pool) if sub == "countries" else []
+            ltd_long_ready = any(
+                long_history_mature(health_map[key], now=now)
+                for key in ltd_candidates
+            )
+            if sub == "countries" and ltd_candidates and not ltd_long_ready:
+                ltd_lines = rank_ltd(
+                    ltd_pool, country_strict=True, require_long=False,
+                )
+            else:
+                ltd_lines = rank_ltd(ltd_pool, country_strict=sub == "countries")
             stats[f"{sub}/{group_dir.name}_ltd"] = emit_ltd(
-                group_dir / "good_ltd.txt", rank_ltd(group_dir / "ltd.txt")
+                ltd_good_path, ltd_lines
             )
 
     # 细分目录：tiers/<tier>/{all.txt,<CC>.txt,sets/<name>.txt}

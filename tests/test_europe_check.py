@@ -21,6 +21,109 @@ class TestEuropeCheck(unittest.TestCase):
         self.assertEqual(ec.parse_endpoint(self.LINE), (self.KEY, "1.2.3.4", 443))
         self.assertIsNone(ec.parse_endpoint("broken"))
 
+    def test_country_long_test_threshold_is_three_mbps(self):
+        self.assertEqual(ec.DEFAULT_MIN_SPEED_MBPS, 2.0)
+        self.assertEqual(ec.DEFAULT_LONG_MIN_SPEED_MBPS, 3.0)
+
+    def test_long_scheduler_rotates_only_mature_speed_candidates(self):
+        now = datetime(2026, 10, 20, 12, tzinfo=timezone.utc)
+        fresh = now.isoformat()
+        mature = {
+            "samples": [1] * 6,
+            "speed_samples": [4.0] * 6,
+            "speed_sample_times": [fresh] * 6,
+            "speed_sample_count": 6,
+            "success_pct": 100,
+            "streak": 6,
+            "median_speed_mbps": 4.0,
+            "speed_spread_pct": 0.1,
+            "last_available": True,
+            "reachable_pct": 100,
+            "availability_streak": 6,
+            "last_probe_at": fresh,
+            "last_speed_at": fresh,
+        }
+        history = {"proxies": {
+            "untested": dict(mature),
+            "recent": {**mature, "last_long_at": (now - timedelta(hours=1)).isoformat()},
+            "slow": {**mature, "median_speed_mbps": 2.9},
+        }}
+        results = {key: {"available": True} for key in history["proxies"]}
+        selected = ec.select_long_keys(
+            results, history, budget=10, now=now, interval_hours=2,
+        )
+        self.assertEqual(selected, ["untested"])
+        self.assertEqual(ec.select_long_keys(
+            results, history, budget=0, now=now,
+        ), [])
+
+    def test_long_history_records_only_scheduled_attempts_and_breaks_streak(self):
+        start = datetime(2026, 10, 20, 10, tzinfo=timezone.utc)
+        first = start.isoformat()
+        second = (start + timedelta(hours=2)).isoformat()
+        history = {"proxies": {"node": {
+            "long_samples": [1], "long_sample_times": [first], "long_streak": 1,
+            "last_long_at": first,
+        }}}
+        ec.update_long_history(history, {"node": {
+            "long_tested": True, "long_ok": True, "long_checked_at": second,
+            "long_requests": 60, "long_duration_seconds": 60.0,
+        }}, now=second)
+        state = history["proxies"]["node"]
+        self.assertEqual(state["long_samples"], [1, 1])
+        self.assertEqual(state["long_streak"], 2)
+        third = (start + timedelta(hours=4)).isoformat()
+        ec.update_long_history(history, {"node": {
+            "long_tested": True, "long_ok": False, "long_checked_at": third,
+            "long_requests": 19, "long_duration_seconds": 22.0,
+            "long_error": "ConnectionResetError",
+        }}, now=third)
+        self.assertEqual(state["long_samples"], [1, 1, 0])
+        self.assertEqual(state["long_streak"], 0)
+        self.assertFalse(state["last_long_ok"])
+        self.assertEqual(state["long_error"], "ConnectionResetError")
+
+    def test_long_connection_reuses_one_tls_stream_for_the_full_duration(self):
+        class Reader:
+            async def readuntil(self, _separator):
+                return b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\n"
+
+            async def readexactly(self, size):
+                return b"x" * size
+
+        class Writer:
+            def __init__(self):
+                self.requests = []
+                self.closed = False
+
+            def write(self, request):
+                self.requests.append(request)
+
+            async def drain(self):
+                return None
+
+            def close(self):
+                self.closed = True
+
+            async def wait_closed(self):
+                return None
+
+        reader, writer = Reader(), Writer()
+        connector = AsyncMock(return_value=(reader, writer))
+        with patch.object(ec.asyncio, "open_connection", connector):
+            ok, requests, elapsed, error = asyncio.run(ec.measure_long_connection(
+                "1.2.3.4", 443, host=ec.DEFAULT_SPEED_HOST,
+                path=ec.DEFAULT_LONG_PATH, duration=0.03, interval=0.005,
+                timeout=0.1, ctx=ec.tls_context(),
+            ))
+        self.assertTrue(ok, error)
+        self.assertGreaterEqual(elapsed, 0.03)
+        self.assertEqual(requests, len(writer.requests))
+        self.assertGreaterEqual(requests, 4)
+        self.assertTrue(all(b"Connection: keep-alive" in req for req in writer.requests))
+        connector.assert_awaited_once()
+        self.assertTrue(writer.closed)
+
     def test_opt_in_catchup_skips_mature_nodes_but_keeps_failures_and_cooldown(self):
         now = datetime(2026, 10, 15, 5, tzinfo=timezone.utc)
         old = "2026-10-15T01:00:00Z"

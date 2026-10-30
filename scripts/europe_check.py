@@ -78,6 +78,14 @@ DEFAULT_SPEED_HOST = "speed.cloudflare.com"
 DEFAULT_SPEED_PATH = "/__down?bytes=5000000"
 DEFAULT_SPEED_BYTES = 5 * 1024 * 1024
 DEFAULT_SPEED_TIMEOUT = 12
+DEFAULT_LONG_BUDGET = 200
+DEFAULT_LONG_WORKERS = 50
+DEFAULT_LONG_DURATION = 60.0
+DEFAULT_LONG_INTERVAL = 1.0
+DEFAULT_LONG_TIMEOUT = 8.0
+DEFAULT_LONG_PATH = "/__down?bytes=1"
+DEFAULT_LONG_MIN_SPEED_MBPS = 3.0
+LONG_HISTORY_WINDOW = 6
 
 SPEED_TOKEN_RE = re.compile(r"-(\d+(?:\.\d+)?)MB/s(?:-|$)")
 
@@ -346,6 +354,185 @@ async def probe_speeds(results: dict[str, dict], keys: list[str], *, workers: in
             print(f"Europe speed: {done}/{len(tasks)}")
 
 
+async def measure_long_connection(
+    ip: str,
+    port: int,
+    *,
+    host: str,
+    path: str,
+    duration: float,
+    interval: float,
+    timeout: float,
+    ctx: ssl.SSLContext,
+) -> tuple[bool, int, float, str | None]:
+    """Exercise one TLS connection with periodic HTTP exchanges for duration."""
+    writer: asyncio.StreamWriter | None = None
+    started = time.monotonic()
+    connected_at: float | None = None
+    requests = 0
+    error = None
+    try:
+        async with asyncio.timeout(timeout):
+            reader, writer = await asyncio.open_connection(
+                ip, port, ssl=ctx, server_hostname=host, limit=64 * 1024,
+                ssl_shutdown_timeout=1,
+            )
+        connected_at = time.monotonic()
+        deadline = connected_at + duration
+        next_request = connected_at
+        while time.monotonic() < deadline:
+            async with asyncio.timeout(timeout):
+                writer.write((
+                    f"GET {path} HTTP/1.1\r\n"
+                    f"Host: {host}\r\n"
+                    "User-Agent: CF-Proxy-Europe-Long-Check/1.0\r\n"
+                    "Accept: */*\r\n"
+                    "Connection: keep-alive\r\n\r\n"
+                ).encode("ascii"))
+                await writer.drain()
+                head = await reader.readuntil(b"\r\n\r\n")
+                rows = head.decode("iso-8859-1").split("\r\n")
+                status = rows[0].split()
+                if len(status) < 2 or status[1] != "200":
+                    error = f"http_{status[1] if len(status) > 1 else 'invalid'}"
+                    break
+                headers = {}
+                for row in rows[1:]:
+                    if ":" in row:
+                        name, value = row.split(":", 1)
+                        headers[name.strip().lower()] = value.strip().lower()
+                if headers.get("connection") == "close":
+                    error = "keepalive_closed"
+                    break
+                try:
+                    body_size = int(headers.get("content-length", ""))
+                except ValueError:
+                    error = "missing_content_length"
+                    break
+                if body_size != 1:
+                    error = "unexpected_content_length"
+                    break
+                body = await reader.readexactly(body_size)
+                if len(body) != 1:
+                    error = "incomplete_body"
+                    break
+                requests += 1
+            next_request += interval
+            delay = next_request - time.monotonic()
+            if delay > 0:
+                await asyncio.sleep(min(delay, max(0.0, deadline - time.monotonic())))
+    except Exception as exc:
+        error = type(exc).__name__
+    finally:
+        elapsed = time.monotonic() - (connected_at if connected_at is not None else started)
+        if writer is not None:
+            try:
+                writer.close()
+                async with asyncio.timeout(1):
+                    await writer.wait_closed()
+            except (OSError, TimeoutError):
+                pass
+    expected_requests = max(2, int(duration / interval * 0.8))
+    if error is None and requests < expected_requests:
+        error = "long_stream_too_sparse"
+    return error is None and elapsed >= duration, requests, round(elapsed, 2), error
+
+
+def select_long_keys(
+    results: dict[str, dict], history: dict, *, budget: int, now: datetime,
+    min_speed_mbps: float = DEFAULT_LONG_MIN_SPEED_MBPS,
+    interval_hours: float = 2.0,
+) -> list[str]:
+    """Rotate long-connection tests across otherwise-good speed candidates."""
+    states = history.get("proxies", {}) if isinstance(history, dict) else {}
+    if not isinstance(states, dict):
+        return []
+    due = []
+    for key, result in results.items():
+        if not result.get("available", result.get("ok")):
+            continue
+        state = states.get(key)
+        if not isinstance(state, dict):
+            continue
+        samples = state.get("samples")
+        speed_values = state.get("speed_samples")
+        speed_times = state.get("speed_sample_times")
+        if not isinstance(speed_values, list):
+            speed_values = []
+        if not isinstance(speed_times, list) or len(speed_times) != len(speed_values):
+            speed_times = [state.get("last_speed_at")] * len(speed_values)
+        strict_speed_samples = [
+            int(
+                isinstance(speed, (int, float))
+                and math.isfinite(speed)
+                and speed >= min_speed_mbps
+            )
+            for speed, stamp in zip(speed_values, speed_times)
+            if is_fresh(stamp, SAMPLE_MAX_AGE_DAYS * 24, now=now)
+        ]
+        try:
+            eligible = (
+                isinstance(samples, list)
+                and len(samples) >= DEFAULT_QUALITY_MIN_SAMPLES
+                and int(state.get("speed_sample_count") or 0) >= DEFAULT_QUALITY_MIN_SAMPLES
+                and float(state.get("success_pct") or 0) >= DEFAULT_QUALITY_MIN_SUCCESS_PCT
+                and int(state.get("streak") or 0) >= DEFAULT_MIN_STREAK
+                and len(strict_speed_samples) >= DEFAULT_QUALITY_MIN_SAMPLES
+                and sum(strict_speed_samples) * 100 / len(strict_speed_samples)
+                >= DEFAULT_QUALITY_MIN_SUCCESS_PCT
+                and trailing_count(strict_speed_samples, 1) >= DEFAULT_MIN_STREAK
+                and float(state.get("median_speed_mbps") or 0) >= min_speed_mbps
+                and float(state["speed_spread_pct"]) <= DEFAULT_QUALITY_MAX_SPEED_SPREAD
+                and bool(state.get("last_available"))
+                and float(state.get("reachable_pct") or 0) >= DEFAULT_QUALITY_MIN_SUCCESS_PCT
+                and int(state.get("availability_streak") or 0) >= DEFAULT_MIN_STREAK
+                and is_fresh(state.get("last_probe_at"), PROBE_MAX_AGE_HOURS, now=now)
+                and is_fresh(state.get("last_speed_at"), SPEED_MAX_AGE_HOURS, now=now)
+            )
+        except (KeyError, TypeError, ValueError):
+            eligible = False
+        if not eligible:
+            continue
+        checked = parse_timestamp(state.get("last_long_at"))
+        if checked is not None and timedelta(0) <= now - checked < timedelta(hours=interval_hours):
+            continue
+        age_order = checked.timestamp() if checked is not None and checked <= now else float("-inf")
+        due.append((age_order, hashlib.sha256(key.encode("utf-8")).digest(), key))
+    due.sort()
+    return [key for _age, _tie, key in due[:max(0, budget)]]
+
+
+async def probe_long_connections(
+    results: dict[str, dict], keys: list[str], *, workers: int,
+    duration: float = DEFAULT_LONG_DURATION,
+    interval: float = DEFAULT_LONG_INTERVAL,
+    timeout: float = DEFAULT_LONG_TIMEOUT,
+) -> None:
+    sem = asyncio.Semaphore(max(1, workers))
+    ctx = tls_context()
+
+    async def work(key: str) -> None:
+        result = results[key]
+        _key, ip, port = parse_endpoint(result["line"])
+        async with sem:
+            ok, requests, elapsed, error = await measure_long_connection(
+                ip, port, host=DEFAULT_SPEED_HOST, path=DEFAULT_LONG_PATH,
+                duration=duration, interval=interval, timeout=timeout, ctx=ctx,
+            )
+        result["long_tested"] = True
+        result["long_checked_at"] = utc_now()
+        result["long_ok"] = ok
+        result["long_requests"] = requests
+        result["long_duration_seconds"] = elapsed
+        result["long_error"] = error
+
+    tasks = [asyncio.create_task(work(key)) for key in keys]
+    for done, task in enumerate(asyncio.as_completed(tasks), 1):
+        await task
+        if done % 50 == 0 or done == len(tasks):
+            print(f"Europe long connection: {done}/{len(tasks)}")
+
+
 def update_history(
     previous: dict,
     results: dict[str, dict],
@@ -452,6 +639,14 @@ def update_history(
             "ms": result.get("ms") if available else prior.get("ms"),
             "error": None if available else result.get("error"),
             "speed_error": result.get("speed_error") if speed_tested else prior.get("speed_error"),
+            "long_samples": list(prior.get("long_samples") or []),
+            "long_sample_times": list(prior.get("long_sample_times") or []),
+            "long_streak": int(prior.get("long_streak") or 0),
+            "last_long_at": prior.get("last_long_at"),
+            "last_long_ok": prior.get("last_long_ok"),
+            "last_long_requests": prior.get("last_long_requests"),
+            "last_long_duration_seconds": prior.get("last_long_duration_seconds"),
+            "long_error": prior.get("long_error"),
         }
         proxies[key] = entry
     return {
@@ -461,6 +656,47 @@ def update_history(
         "window": window,
         "proxies": proxies,
     }
+
+
+def update_long_history(
+    history: dict, results: dict[str, dict], *, now: str,
+    window: int = LONG_HISTORY_WINDOW,
+) -> None:
+    """Append only scheduled long tests; untested nodes keep their history."""
+    current_at = parse_timestamp(now)
+    if current_at is None:
+        raise ValueError("invalid long-history timestamp")
+    states = history.get("proxies", {})
+    for key, state in states.items():
+        if not isinstance(state, dict):
+            continue
+        samples = list(state.get("long_samples") or [])
+        stamps = state.get("long_sample_times")
+        if not isinstance(stamps, list) or len(stamps) != len(samples):
+            stamps = [state.get("last_long_at")] * len(samples)
+        retained = [
+            (int(sample), stamp)
+            for sample, stamp in zip(samples, stamps)
+            if sample in (0, 1)
+            and is_fresh(stamp, SAMPLE_MAX_AGE_DAYS * 24, now=current_at)
+        ]
+        result = results.get(key, {})
+        if result.get("long_tested"):
+            retained.append((int(bool(result.get("long_ok"))), result.get("long_checked_at", now)))
+        retained = retained[-max(1, window):]
+        state["long_samples"] = [sample for sample, _stamp in retained]
+        state["long_sample_times"] = [stamp for _sample, stamp in retained]
+        state["long_streak"] = trailing_count(state["long_samples"], 1)
+        if result.get("long_tested"):
+            state["last_long_at"] = result.get("long_checked_at", now)
+            state["last_long_ok"] = bool(result.get("long_ok"))
+            state["last_long_requests"] = result.get("long_requests")
+            state["last_long_duration_seconds"] = result.get("long_duration_seconds")
+            state["long_error"] = result.get("long_error")
+        elif retained:
+            state["last_long_at"] = retained[-1][1]
+            state["last_long_ok"] = bool(retained[-1][0])
+            state["long_error"] = state.get("long_error")
 
 
 def trailing_count(samples: list, value: int) -> int:
@@ -655,6 +891,25 @@ async def run(args: argparse.Namespace) -> int:
         now=now,
         min_speed_mbps=args.min_speed_mbps,
     )
+    long_keys = select_long_keys(
+        results, history, budget=args.long_budget, now=current_at,
+        interval_hours=args.long_interval_hours,
+    )
+    print(
+        f"Qualifying candidates selected for long-connection checks={len(long_keys)} "
+        f"(budget={args.long_budget}, duration={args.long_duration}s, "
+        f"workers={args.long_workers})"
+    )
+    long_started = time.monotonic()
+    await probe_long_connections(
+        results, long_keys, workers=args.long_workers,
+        duration=args.long_duration, interval=args.long_interval_seconds,
+        timeout=args.long_timeout,
+    )
+    long_seconds = round(time.monotonic() - long_started, 2)
+    now = utc_now()
+    current_at = parse_timestamp(now)
+    update_long_history(history, results, now=now)
     classify_results(results, min_speed_mbps=args.min_speed_mbps, history=history, now=current_at)
     states = history["proxies"]
     coverage = {
@@ -665,6 +920,9 @@ async def run(args: argparse.Namespace) -> int:
         "speed_tested": len(speed_keys),
         "speed_seconds": speed_seconds,
         "speed_succeeded": speed_ok,
+        "long_tested": len(long_keys),
+        "long_succeeded": sum(bool(results[key].get("long_ok")) for key in long_keys),
+        "long_seconds": long_seconds,
         "speed_fresh": sum(is_fresh(
             states[key].get("last_speed_at"), SPEED_MAX_AGE_HOURS, now=current_at
         ) for key in results),
@@ -781,6 +1039,17 @@ def main(argv: list[str] | None = None) -> int:
                     help="Opt-in catch-up: skip downloads with this many valid recent samples (0 = normal rotation)")
     ap.add_argument("--speed-interval-hours", type=float, default=DEFAULT_SPEED_INTERVAL_HOURS,
                     help="Do not repeat a speed measurement inside this interval")
+    ap.add_argument("--long-budget", type=int, default=DEFAULT_LONG_BUDGET,
+                    help="Maximum long-connection tests per run")
+    ap.add_argument("--long-workers", type=int, default=DEFAULT_LONG_WORKERS)
+    ap.add_argument("--long-duration", type=float, default=DEFAULT_LONG_DURATION,
+                    help="Seconds to keep each TLS connection active")
+    ap.add_argument("--long-interval-seconds", type=float, default=DEFAULT_LONG_INTERVAL,
+                    help="Seconds between keep-alive exchanges on each connection")
+    ap.add_argument("--long-timeout", type=float, default=DEFAULT_LONG_TIMEOUT,
+                    help="Per-connection/request timeout for long tests")
+    ap.add_argument("--long-interval-hours", type=float, default=2.0,
+                    help="Do not repeat a long test inside this interval")
     ap.add_argument("--run-timeout", type=float, default=25 * 60,
                     help="Total seconds before aborting without publishing partial results")
     ap.add_argument("--retries", type=int, default=1)
@@ -832,10 +1101,16 @@ def main(argv: list[str] | None = None) -> int:
         help="Maximum lines in each Europe subscription (0 = unlimited)",
     )
     args = ap.parse_args(argv)
-    if args.speed_budget < 0 or args.speed_target_samples < 0 or args.speed_interval_hours < 0 or args.history_window < 1:
-        ap.error("speed budget/interval must be nonnegative and history window must be positive")
-    if min(args.workers, args.speed_workers, args.timeout, args.run_timeout) <= 0:
+    if (args.speed_budget < 0 or args.speed_target_samples < 0
+            or args.speed_interval_hours < 0 or args.history_window < 1
+            or args.long_budget < 0 or args.long_interval_hours < 0):
+        ap.error("budgets/intervals must be nonnegative and history window must be positive")
+    if min(args.workers, args.speed_workers, args.long_workers, args.timeout,
+           args.run_timeout, args.long_duration, args.long_interval_seconds,
+           args.long_timeout) <= 0:
         ap.error("workers and timeouts must be positive")
+    if args.long_interval_seconds >= args.long_duration:
+        ap.error("long interval must be shorter than the long connection duration")
     if not 0 <= args.min_run_success_pct <= 100:
         ap.error("min-run-success-pct must be between 0 and 100")
 

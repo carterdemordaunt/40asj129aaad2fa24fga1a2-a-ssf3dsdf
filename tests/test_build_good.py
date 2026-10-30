@@ -18,16 +18,24 @@ def fresh_availability() -> dict:
     return {
         "last_probe_at": stamp,
         "last_speed_at": stamp,
+        "speed_samples": [8.0] * 6,
+        "speed_sample_times": [stamp] * 6,
         "last_available": True,
         "reachable_pct": 100,
         "availability_streak": 6,
         "availability_samples": [1] * 6,
+        "long_samples": [1, 1],
+        "long_sample_times": [stamp, stamp],
+        "long_streak": 2,
+        "last_long_at": stamp,
+        "last_long_ok": True,
     }
 
 
 def healthy_map(text: str, *, median_speed_mbps: float = 8.0) -> dict[str, dict]:
     state = {
         **fresh_availability(),
+        "speed_samples": [median_speed_mbps] * 6,
         "samples": [1] * 6,
         "speed_sample_count": 6,
         "success_pct": 100,
@@ -285,18 +293,52 @@ class TestFilterRank(unittest.TestCase):
             "speed_spread_pct": 0.1,
         }
         self.assertEqual(
-            bg.filter_rank(line, china, rep, health_map={key: healthy}), [line]
+            bg.filter_rank(
+                line, china, rep, health_map={key: healthy}, country_strict=True
+            ), [line]
         )
         unstable = {**healthy, "success_pct": 80}
         self.assertEqual(
-            bg.filter_rank(line, china, rep, health_map={key: unstable}), []
+            bg.filter_rank(
+                line, china, rep, health_map={key: unstable}, country_strict=True
+            ), []
         )
         slow = {**healthy, "median_speed_mbps": 1.99}
-        self.assertEqual(bg.filter_rank(line, china, rep, health_map={key: slow}), [])
+        self.assertEqual(bg.filter_rank(
+            line, china, rep, health_map={key: slow}, country_strict=True
+        ), [])
+        under_threshold = {**healthy, "median_speed_mbps": 2.99}
+        self.assertEqual(
+            bg.filter_rank(
+                line, china, rep, health_map={key: under_threshold}, country_strict=True
+            ), []
+        )
+        weak_run_history = {
+            **healthy,
+            "speed_samples": [8.0, 8.0, 8.0, 8.0, 2.5, 2.5],
+        }
+        self.assertEqual(bg.filter_rank(
+            line, china, rep, health_map={key: weak_run_history}, country_strict=True
+        ), [])
+        failed_long = {**healthy, "long_samples": [1, 0], "long_streak": 0}
+        self.assertEqual(
+            bg.filter_rank(
+                line, china, rep, health_map={key: failed_long}, country_strict=True
+            ), []
+        )
+        warming_long = {**healthy, "long_samples": [1], "long_sample_times": [
+            healthy["last_long_at"]
+        ]}
+        self.assertEqual(
+            bg.filter_rank(
+                line, china, rep, health_map={key: warming_long}, country_strict=True
+            ), []
+        )
         missing_speed_history = {**healthy, "speed_sample_count": 1}
         self.assertEqual(
             bg.filter_rank(
-                line, china, rep, health_map={key: missing_speed_history}
+                line, china, rep, health_map={key: missing_speed_history},
+                country_strict=True,
             ),
             [],
         )
@@ -674,6 +716,51 @@ class TestWriteGoodFiles(unittest.TestCase):
             self.assertEqual(root_output, output)
             self.assertEqual((valid / "all.txt").read_text(encoding="utf-8"), lines)
 
+    def test_three_mbps_gate_is_limited_to_country_good_lists(self):
+        line = "1.1.1.1:443#US-100ms-2.50MB/s-CN-90\n"
+        key = "1.1.1.1:443#US"
+        with tempfile.TemporaryDirectory() as tmp:
+            valid = Path(tmp) / "valid"
+            country = valid / "countries" / "US"
+            country.mkdir(parents=True)
+            (valid / "all.txt").write_text(line, encoding="utf-8")
+            (country / "all.txt").write_text(line, encoding="utf-8")
+            health = healthy_map(line, median_speed_mbps=2.5)
+            health[key]["speed_samples"] = [2.5] * 6
+
+            bg.write_good_files(valid, set(), {}, health_map=health)
+
+            self.assertEqual((valid / "all_good.txt").read_text(), line)
+            self.assertFalse((country / "good.txt").exists())
+
+    def test_country_speed_gate_applies_during_long_history_warmup(self):
+        line = "1.1.1.1:443#US-100ms-8.00MB/s\n"
+        key = "1.1.1.1:443#US"
+        with tempfile.TemporaryDirectory() as tmp:
+            valid = Path(tmp) / "valid"
+            country = valid / "countries" / "US"
+            country.mkdir(parents=True)
+            (valid / "all.txt").write_text(line, encoding="utf-8")
+            (country / "all.txt").write_text(line, encoding="utf-8")
+            (country / "good.txt").write_text("previous-country-node\n", encoding="utf-8")
+            health = healthy_map(line)
+            health[key]["long_samples"] = [1]
+            health[key]["long_sample_times"] = [health[key]["last_long_at"]]
+            health[key]["long_streak"] = 1
+
+            bg.write_good_files(valid, set(), {}, health_map=health)
+
+            self.assertEqual((country / "good.txt").read_text(encoding="utf-8"), line)
+            health[key].update({
+                "long_samples": [1, 1],
+                "long_sample_times": [health[key]["last_long_at"]] * 2,
+                "long_streak": 2,
+                "median_speed_mbps": 2.5,
+                "speed_samples": [2.5] * 6,
+            })
+            bg.write_good_files(valid, set(), {}, health_map=health)
+            self.assertFalse((country / "good.txt").exists())
+
     def test_idempotent_rewrite(self):
         with tempfile.TemporaryDirectory() as tmp:
             valid = Path(tmp) / "valid"
@@ -805,14 +892,7 @@ class TestWriteGoodFiles(unittest.TestCase):
             }), encoding="utf-8")
             (quality / "europe.json").write_text(json.dumps({
                 "ts": datetime.now(timezone.utc).isoformat(),
-                "proxies": {key: {
-                    "samples": [1] * 6,
-                    "speed_sample_count": 6,
-                    "success_pct": 100,
-                    "streak": 6,
-                    "median_speed_mbps": 8.0,
-                    "speed_spread_pct": 0.1,
-                }},
+                "proxies": healthy_map(line),
             }), encoding="utf-8")
 
             rc = bg.main(["--data-dir", str(data_dir)])
@@ -876,6 +956,7 @@ class TestWriteGoodFiles(unittest.TestCase):
                 "ts": now,
                 "proxies": {
                     f"10.0.0.{i}:443#US": {
+                        **fresh_availability(),
                         "samples": [1] * 6,
                         "speed_sample_count": 6,
                         "success_pct": 100,
