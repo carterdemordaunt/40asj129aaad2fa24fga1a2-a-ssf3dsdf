@@ -1,9 +1,9 @@
 {
   "sources": {
     "afr": {
-      "overlap": 568,
+      "overlap": 577,
       "total": 976,
-      "unique": 408
+      "unique": 399
     },
     "cmliu": {
       "overlap": 27,
@@ -12,8 +12,8 @@
     },
     "farel": {
       "overlap": 216,
-      "total": 945,
-      "unique": 729
+      "total": 937,
+      "unique": 721
     },
     "leilao_cfproxy": {
       "overlap": 166,
@@ -36,9 +36,9 @@
       "unique": 251
     },
     "svip_cfip": {
-      "overlap": 368,
-      "total": 404,
-      "unique": 36
+      "overlap": 370,
+      "total": 403,
+      "unique": 33
     },
     "wangallen": {
       "overlap": 21,
@@ -46,24 +46,24 @@
       "unique": 2
     },
     "wanwu": {
-      "overlap": 689,
-      "total": 690,
-      "unique": 1
+      "overlap": 651,
+      "total": 656,
+      "unique": 5
     },
     "wentao": {
-      "overlap": 121,
-      "total": 145,
-      "unique": 24
+      "overlap": 145,
+      "total": 173,
+      "unique": 28
     },
     "wwuyi": {
-      "overlap": 318,
-      "total": 440,
-      "unique": 122
+      "overlap": 313,
+      "total": 439,
+      "unique": 126
     },
     "ymyuuu": {
-      "overlap": 137,
+      "overlap": 136,
       "total": 1029,
-      "unique": 892
+      "unique": 893
     }
   }
 }
