@@ -1,9 +1,9 @@
 {
   "sources": {
     "afr": {
-      "overlap": 549,
-      "total": 942,
-      "unique": 393
+      "overlap": 547,
+      "total": 914,
+      "unique": 367
     },
     "cmliu": {
       "overlap": 27,
@@ -11,9 +11,9 @@
       "unique": 694
     },
     "farel": {
-      "overlap": 213,
-      "total": 975,
-      "unique": 762
+      "overlap": 214,
+      "total": 991,
+      "unique": 777
     },
     "leilao_cfproxy": {
       "overlap": 145,
@@ -26,9 +26,9 @@
       "unique": 148
     },
     "main (zip.cm.edu.kg)": {
-      "overlap": 1773,
+      "overlap": 1765,
       "total": 10509,
-      "unique": 8736
+      "unique": 8744
     },
     "proxyip": {
       "overlap": 0,
@@ -36,9 +36,9 @@
       "unique": 251
     },
     "svip_cfip": {
-      "overlap": 375,
-      "total": 382,
-      "unique": 7
+      "overlap": 388,
+      "total": 388,
+      "unique": 0
     },
     "wangallen": {
       "overlap": 20,
@@ -46,19 +46,19 @@
       "unique": 3
     },
     "wanwu": {
-      "overlap": 557,
+      "overlap": 558,
       "total": 559,
-      "unique": 2
+      "unique": 1
     },
     "wentao": {
-      "overlap": 120,
-      "total": 150,
+      "overlap": 141,
+      "total": 171,
       "unique": 30
     },
     "wwuyi": {
-      "overlap": 290,
+      "overlap": 287,
       "total": 426,
-      "unique": 136
+      "unique": 139
     },
     "ymyuuu": {
       "overlap": 136,
